@@ -4,13 +4,14 @@ import json
 import tempfile
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from dotenv import load_dotenv
 
 from google.cloud import storage
 from google.cloud import documentai
 from google.api_core.client_options import ClientOptions
 import functions_framework
 
-# ==== 環境変数 ====
+load_dotenv()
 PROJECT_ID = os.environ.get("PROJECT_ID")
 LOCATION = os.environ.get("LOCATION", "us")  # Document AI location
 PROCESSOR_ID = os.environ.get("PROCESSOR_ID")
@@ -216,7 +217,7 @@ def on_file_finalized(cloud_event):
         result = process_pdf(bucket, name)
         target_bucket = OUTPUT_BUCKET or bucket
         out_uri = save_json(target_bucket, name, result)
-        print(f"✅ Saved JSON to {out_uri}")
+        print(f"Saved JSON to {out_uri}")
     except Exception as e:
         print(f"ERROR: {e}")
         raise
