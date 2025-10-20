@@ -11,21 +11,20 @@ from google.cloud import documentai
 from google.api_core.client_options import ClientOptions
 import functions_framework
 
-# ==== 環境変数の読み込み ====
+# environment variables
 load_dotenv()
 PROJECT_ID = os.environ.get("PROJECT_ID")
 LOCATION = os.environ.get("LOCATION", "us")
 PROCESSOR_ID = os.environ.get("PROCESSOR_ID")
 OUTPUT_BUCKET = os.environ.get("OUTPUT_BUCKET")
 
-# ==== クライアント初期化 ====
+# client initialization
 storage_client = storage.Client()
 docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
 )
 
-
-# ==== ユーティリティ関数 ====
+# utility functions
 def _to_decimal(x):
     if x is None:
         return None
@@ -55,6 +54,12 @@ def _entity_text(doc, e):
         return doc.text[start:end].strip()
     return None
 
+#FIXME: 社名推定ロジックは一旦無効化 
+# def _guess_company_name(doc):
+#     text = doc.text or ""
+#     ignore = ["HTBエナジー株式会社"]
+#     candidates = [c for c in candidates if all(ig not in c for ig in ignore)]
+#     return candidates[0] if candidates else None
 
 def _guess_tool_name(doc):
     text = doc.text or ""
