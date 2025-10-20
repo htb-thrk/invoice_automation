@@ -1,4 +1,44 @@
-.env
-*.pyc
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
 
+# Virtualenvs / env files
+venv/
+.venv/
+env/
+.env
+.env.*
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Secrets / service account keys
+*.json
+credentials.json
+service-account.json
+key.json
+
+# Terraform (keep .tf files unless you intentionally want to exclude them)
+.terraform/
+*.tfstate
+*.tfstate.*
+override.tf
+override.tf.json
+crash.log
+*.tfvars
+# keep terraform.lock.hcl in repo
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
