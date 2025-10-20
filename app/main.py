@@ -9,7 +9,7 @@ from google.cloud import storage, documentai
 from google.api_core.client_options import ClientOptions
 import functions_framework
 
-#  ==== 環境変数 ====
+# ==== 環境変数 ====
 load_dotenv()
 PROJECT_ID = os.environ.get("PROJECT_ID")
 LOCATION = os.environ.get("LOCATION", "us")
@@ -39,15 +39,33 @@ def _best_entity(entities, type_candidates):
     return None
 
 def _entity_text(doc, e):
+    """Entity から元のテキスト（日本語含む）を抽出"""
     if not e:
         return None
-    if getattr(e, "mention_text", ""):
-        return e.mention_text.strip()
+
+    text = getattr(e, "mention_text", "") or ""
+
+    # ① mention_text に日本語が含まれていればそのまま
+    if re.search(r"[ぁ-んァ-ヶ一-龥]", text):
+        return text.strip()
+
+    # ② text_anchor があれば、その範囲から原文を取得
     if e.text_anchor and doc.text:
-        start = e.text_anchor.text_segments[0].start_index or 0
-        end = e.text_anchor.text_segments[0].end_index or 0
-        return doc.text[start:end].strip()
-    return None
+        seg = e.text_anchor.text_segments[0]
+        start = seg.start_index or 0
+        end = seg.end_index or 0
+        text_slice = doc.text[start:end].strip()
+        if re.search(r"[ぁ-んァ-ヶ一-龥]", text_slice):
+            return text_slice
+
+    # ③ 英語しか得られなかった場合、日本語会社名候補をdoc.text全体から補完
+    fulltext = doc.text or ""
+    jp_company = re.findall(r'(?:株式|有限)会社[^\s　\n]+', fulltext)
+    if jp_company:
+        return jp_company[0]
+
+    # ④ 最終フォールバック
+    return text.strip() or None
 
 def _parse_amount(text):
     if not text:
@@ -81,14 +99,11 @@ def _guess_department(doc):
         return m2.group(1).strip()
     return None
 
-# ==== 新規追加：会社名補完 ====
 def _guess_company_name(doc):
     text = doc.text or ""
-    # 会社名候補（株式会社 / 有限会社）
     candidates = re.findall(r'(?:株式|有限)会社[^\s　\n]+', text)
     ignore = ["HTBエナジー株式会社"]
     candidates = [c for c in candidates if all(ig not in c for ig in ignore)]
-    # 最初の候補を返す
     return candidates[0] if candidates else None
 
 # ==== メイン抽出 ====
@@ -108,7 +123,11 @@ def extract_fields(doc):
     # --- 会社名（ハイブリッド構成）---
     e_company = _best_entity(entities, ["supplier_name", "vendor_name", "seller_name", "merchant_name"])
     company = _entity_text(doc, e_company)
-    if not company or "HTBエナジー" in company:
+    if (
+        not company or
+        "HTBエナジー" in company or
+        re.fullmatch(r"[A-Za-z0-9\s\.\-]+", company)
+    ):
         company = _guess_company_name(doc)
     fields["company"] = company
 
@@ -128,21 +147,52 @@ def extract_fields(doc):
         tax_val = _parse_amount(_entity_text(doc, e_tax))
         fields["tax_amount"] = float(tax_val) if tax_val is not None else None
 
-    # --- 入金期日 ---
+    # --- 入金期日（Document AI + 日本語補完）---
     e_due = _best_entity(entities, ["due_date", "payment_due_date", "payment_terms_due_date"])
     due_raw = _entity_text(doc, e_due)
+    due_date = None
+
+    # ① Document AI結果から日付抽出
     if due_raw:
-        m = re.search(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", due_raw)
+        m = re.search(r"(\d{4})[/-年](\d{1,2})[/-月](\d{1,2})", due_raw)
         if m:
             try:
                 y, mo, d = map(int, m.groups())
-                fields["due_date"] = datetime(y, mo, d).date().isoformat()
+                due_date = datetime(y, mo, d).date().isoformat()
             except ValueError:
                 pass
+
+    # ② 後処理で日本語テキストから再抽出
+    if not due_date:
+        text = doc.text or ""
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        keyword_pat = re.compile(r"(支払|支払い|お支払|お支払い|入金|ご入金|御入金|まで|迄)", re.I)
+
+        for ln in lines:
+            if keyword_pat.search(ln):
+                m = re.search(r"(\d{4})[年/.-](\d{1,2})[月/.-](\d{1,2})", ln)
+                if not m:
+                    m = re.search(r"(\d{1,2})[月/.-](\d{1,2})[日]?", ln)
+                    if m:
+                        y = datetime.now().year
+                        mo, d = map(int, m.groups())
+                        due_date = datetime(y, mo, d).date().isoformat()
+                        break
+                else:
+                    y, mo, d = map(int, m.groups())
+                    try:
+                        due_date = datetime(y, mo, d).date().isoformat()
+                        break
+                    except ValueError:
+                        pass
+    fields["due_date"] = due_date
 
     # --- ツール名・部署名 ---
     fields["tool"] = _guess_tool_name(doc)
     fields["department"] = _guess_department(doc)
+
+    if not isinstance(fields, dict):
+        fields = {}
     return fields
 
 # ==== PDF処理 ====
@@ -161,7 +211,7 @@ def process_pdf(bucket_name: str, blob_name: str) -> dict:
         result = docai_client.process_document(request=request)
         doc = result.document
 
-        fields = extract_fields(doc)
+        fields = extract_fields(doc) or {}
         fields["_source"] = {
             "bucket": bucket_name,
             "name": blob_name,
