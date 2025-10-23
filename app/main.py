@@ -9,10 +9,21 @@ from google.cloud import storage, documentai
 from google.api_core.client_options import ClientOptions
 import functions_framework
 
+def _norm(s: str) -> str:
+    return re.sub(r"[ :：\u3000]", "", s.lower()) if s else s
+
+def _clean_value(s: str) -> str:
+    if not s:
+        return s
+    s = s.strip()
+    s = re.sub(r"[ \u3000]+", " ", s)
+    s = re.sub(r"[：:]\s*$", "", s)
+    return s
+
 # ==== 環境変数 ====
 load_dotenv()
 PROJECT_ID = os.environ.get("PROJECT_ID")
-LOCATION = os.environ.get("LOCATION", "us")
+LOCATION = os.environ.get("LOCATION", "asia-northeast1")
 PROCESSOR_ID = os.environ.get("PROCESSOR_ID")
 OUTPUT_BUCKET = os.environ.get("OUTPUT_BUCKET")
 
@@ -31,51 +42,80 @@ def _to_decimal(x):
     except InvalidOperation:
         return None
 
-def _best_entity(entities, type_candidates):
-    for cand in type_candidates:
-        for e in entities:
-            if cand in (e.type_ or "").lower():
-                return e
-    return None
 
-def _entity_text(doc, e):
-    """Entity から元のテキスト（日本語含む）を抽出"""
-    if not e:
-        return None
+# ==== OCRテキストから主要情報を抽出 ====
+def extract_from_text(text: str) -> dict:
+    fields = {
+        "company": None,
+        "tool": None,
+        "department": None,
+        "amount_excl_tax": None,
+        "amount_incl_tax": None,
+        "due_date": None
+    }
 
-    text = getattr(e, "mention_text", "") or ""
-
-    # ① mention_text に日本語が含まれていればそのまま
-    if re.search(r"[ぁ-んァ-ヶ一-龥]", text):
-        return text.strip()
-
-    # ② text_anchor があれば、その範囲から原文を取得
-    if e.text_anchor and doc.text:
-        seg = e.text_anchor.text_segments[0]
-        start = seg.start_index or 0
-        end = seg.end_index or 0
-        text_slice = doc.text[start:end].strip()
-        if re.search(r"[ぁ-んァ-ヶ一-龥]", text_slice):
-            return text_slice
-
-    # ③ 英語しか得られなかった場合、日本語会社名候補をdoc.text全体から補完
-    fulltext = doc.text or ""
-    jp_company = re.findall(r'(?:株式|有限)会社[^\s　\n]+', fulltext)
-    if jp_company:
-        return jp_company[0]
-
-    # ④ 最終フォールバック
-    return text.strip() or None
-
-def _parse_amount(text):
     if not text:
-        return None
-    m = re.search(r"-?\d[\d,]*\.?\d*", text)
-    return _to_decimal(m.group(0)) if m else None
+        return fields
 
-def _guess_tool_name(doc):
-    text = doc.text or ""
+    # 改行を整形
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    # === 会社名 ===
+    company_match = re.findall(r'(?:株式|有限)会社[^\s　\n]+', text)
+    if company_match:
+        ignore = ["HTBエナジー株式会社"]
+        company_match = [c for c in company_match if all(ig not in c for ig in ignore)]
+        if company_match:
+            fields["company"] = company_match[0]
+
+    # === 部署名 ===
+    #FIXME: 部署名は明細に記載がない場合も多いため、申請の段階から情報を取得する運用に変更
+    # dept_match = re.search(r"(?:部署|部|課)\s*[:：]?\s*([^\s　/()（）【】\[\]]{2,20})", text)
+    # if dept_match:
+    #     fields["department"] = dept_match.group(1).strip()
+    # else:
+    #     dept_match2 = re.search(r"(?:ご担当)\s*([^\s　/()（）【】\[\]]{2,20})", text)
+    #     if dept_match2:
+    #         fields["department"] = dept_match2.group(1).strip()
+
+    # === 合計・税込金額 ===
+    incl_match = re.search(
+        r"(合計|ご請求金額|金額[\s　]*税込[：:]?|金額[：:]?)\s*[¥￥]?\s*([\d,]+)\s*(?:（?\s*税込(?:み)?[?）)）]*)?",
+        text
+    )
+    if incl_match:
+        fields["amount_incl_tax"] = float(_to_decimal(incl_match.group(2)))
+
+    # === 小計（税抜） ===
+    excl_match = re.search(
+        r"(小計|税抜金額)[：:\s]*[¥￥]?\s*([\d,]+)\s*(?:（?\s*(?:税抜|外税)[）)）]*)?",
+        text
+    )
+    if excl_match:
+        fields["amount_excl_tax"] = float(_to_decimal(excl_match.group(2)))
+
+    # ===支払期日===
+    keyword_pat = re.compile(r"(支払|支払い|お支払|お支払い|入金|ご入金|御入金|まで|迄)", re.I)
+    for ln in lines:
+        if keyword_pat.search(ln):
+            m = re.search(r"(\d{4})[年/.-](\d{1,2})[月/.-](\d{1,2})", ln)
+            if not m:
+                m = re.search(r"(\d{1,2})[月/.-](\d{1,2})[日]?", ln)
+                if m:
+                    y = datetime.now().year
+                    mo, d = map(int, m.groups())
+                    fields["due_date"] = datetime(y, mo, d).date().isoformat()
+                    break
+            else:
+                y, mo, d = map(int, m.groups())
+                try:
+                    fields["due_date"] = datetime(y, mo, d).date().isoformat()
+                    break
+                except ValueError:
+                    pass
+
+
+    # === ツール名（サービス名・商品名など） ===
     key_pat = re.compile(r"(費目|商?品名|摘要|内容|サービス名?)", re.I)
     token_pat = re.compile(r"[A-Za-z0-9\.\-_]{3,}|[ァ-ンヴー]{3,}")
     for i, ln in enumerate(lines):
@@ -85,125 +125,23 @@ def _guess_tool_name(doc):
                 candidates += token_pat.findall(lines[i + 1])
             if candidates:
                 candidates.sort(key=len, reverse=True)
-                return candidates[0]
-    all_cand = token_pat.findall(text)
-    return max(all_cand, key=len) if all_cand else None
+                fields["tool"] = candidates[0]
+                break
 
-def _guess_department(doc):
-    text = doc.text or ""
-    m = re.search(r"(?:部署|部|課)\s*[:：]?\s*([^\s　/()（）【】\[\]]{2,20})", text)
-    if m:
-        return m.group(1).strip()
-    m2 = re.search(r"(?:ご担当)\s*([^\s　/()（）【】\[\]]{2,20})", text)
-    if m2:
-        return m2.group(1).strip()
-    return None
-
-def _guess_company_name(doc):
-    text = doc.text or ""
-    candidates = re.findall(r'(?:株式|有限)会社[^\s　\n]+', text)
-    ignore = ["HTBエナジー株式会社"]
-    candidates = [c for c in candidates if all(ig not in c for ig in ignore)]
-    return candidates[0] if candidates else None
-
-# ==== メイン抽出 ====
-def extract_fields(doc):
-    fields = {
-        "company": None,
-        "tool": None,
-        "department": None,
-        "amount_excl_tax": None,
-        "amount_incl_tax": None,
-        "tax_amount": None,
-        "due_date": None
-    }
-
-    entities = list(doc.entities) if getattr(doc, "entities", None) else []
-
-    # --- 会社名（ハイブリッド構成）---
-    e_company = _best_entity(entities, ["supplier_name", "vendor_name", "seller_name", "merchant_name"])
-    company = _entity_text(doc, e_company)
-    if (
-        not company or
-        "HTBエナジー" in company or
-        re.fullmatch(r"[A-Za-z0-9\s\.\-]+", company)
-    ):
-        company = _guess_company_name(doc)
-    fields["company"] = company
-
-    # --- 金額関連 ---
-    e_subtotal = _best_entity(entities, ["subtotal", "net_amount", "amount_due_excluding_tax"])
-    e_total = _best_entity(entities, ["total_amount", "amount_due", "grand_total", "total"])
-    subtotal = _parse_amount(_entity_text(doc, e_subtotal))
-    total = _parse_amount(_entity_text(doc, e_total))
-
-    fields["amount_excl_tax"] = float(subtotal) if subtotal is not None else None
-    fields["amount_incl_tax"] = float(total) if total is not None else None
-
-    if subtotal is not None and total is not None:
-        fields["tax_amount"] = float(total - subtotal)
-    else:
-        e_tax = _best_entity(entities, ["tax_amount", "vat", "consumption_tax"])
-        tax_val = _parse_amount(_entity_text(doc, e_tax))
-        fields["tax_amount"] = float(tax_val) if tax_val is not None else None
-
-    # --- 入金期日（Document AI + 日本語補完）---
-    e_due = _best_entity(entities, ["due_date", "payment_due_date", "payment_terms_due_date"])
-    due_raw = _entity_text(doc, e_due)
-    due_date = None
-
-    # ① Document AI結果から日付抽出
-    if due_raw:
-        m = re.search(r"(\d{4})[/-年](\d{1,2})[/-月](\d{1,2})", due_raw)
-        if m:
-            try:
-                y, mo, d = map(int, m.groups())
-                due_date = datetime(y, mo, d).date().isoformat()
-            except ValueError:
-                pass
-
-    # ② 後処理で日本語テキストから再抽出
-    if not due_date:
-        text = doc.text or ""
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        keyword_pat = re.compile(r"(支払|支払い|お支払|お支払い|入金|ご入金|御入金|まで|迄)", re.I)
-
-        for ln in lines:
-            if keyword_pat.search(ln):
-                m = re.search(r"(\d{4})[年/.-](\d{1,2})[月/.-](\d{1,2})", ln)
-                if not m:
-                    m = re.search(r"(\d{1,2})[月/.-](\d{1,2})[日]?", ln)
-                    if m:
-                        y = datetime.now().year
-                        mo, d = map(int, m.groups())
-                        due_date = datetime(y, mo, d).date().isoformat()
-                        break
-                else:
-                    y, mo, d = map(int, m.groups())
-                    try:
-                        due_date = datetime(y, mo, d).date().isoformat()
-                        break
-                    except ValueError:
-                        pass
-    fields["due_date"] = due_date
-
-    # --- ツール名・部署名 ---
-    fields["tool"] = _guess_tool_name(doc)
-    fields["department"] = _guess_department(doc)
-
-    if not isinstance(fields, dict):
-        fields = {}
     return fields
 
-# ==== PDF処理 ====
+
+# ==== メイン処理 ====
 def process_pdf(bucket_name: str, blob_name: str) -> dict:
     try:
+        # 1. download PDF from GCS
         bucket = storage_client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             blob.download_to_filename(tmp.name)
             pdf_path = tmp.name
 
+        # 2. call Document AI （Form Parser）
         name = docai_client.processor_path(PROJECT_ID, LOCATION, PROCESSOR_ID)
         with open(pdf_path, "rb") as f:
             raw_document = documentai.RawDocument(content=f.read(), mime_type="application/pdf")
@@ -211,7 +149,12 @@ def process_pdf(bucket_name: str, blob_name: str) -> dict:
         result = docai_client.process_document(request=request)
         doc = result.document
 
-        fields = extract_fields(doc) or {}
+        # 3. Get OCR text
+        ocr_text = doc.text or ""
+        print("[DEBUG] OCR text preview:", ocr_text[:500])
+
+        # 4. Extract information from OCR text
+        fields = extract_from_text(ocr_text)
         fields["_source"] = {
             "bucket": bucket_name,
             "name": blob_name,
@@ -234,6 +177,7 @@ def process_pdf(bucket_name: str, blob_name: str) -> dict:
             }
         }
 
+
 # ==== JSON保存 ====
 def save_json(to_bucket: str, source_blob_name: str, data: dict):
     try:
@@ -248,6 +192,7 @@ def save_json(to_bucket: str, source_blob_name: str, data: dict):
     except Exception as e:
         print(f"[ERROR] Failed to save JSON: {e}")
         return None
+
 
 # ==== GCSトリガー ====
 @functions_framework.cloud_event
