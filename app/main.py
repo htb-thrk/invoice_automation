@@ -35,10 +35,17 @@ docai_client = documentai.DocumentProcessorServiceClient(
 
 # ==== Utility ====
 def _to_decimal(x):
+    """カンマを保持した文字列を一時的に除去して数値化"""
     if x is None:
         return None
     try:
-        return Decimal(str(x).replace(",", "").strip())
+        s = str(x)
+        s = s.replace(",", "").replace("，", "").strip()
+        if s.count(".") == 1 and len(s.split(".")[1]) <= 2:
+            pass
+        else:
+            s = s.replace(".", "")
+        return Decimal(s)
     except InvalidOperation:
         return None
 
@@ -80,7 +87,7 @@ def extract_from_text(text: str) -> dict:
 
     # === 合計・税込金額 ===
     incl_match = re.search(
-        r"(合計|ご請求金額|金額[\s　]*税込[：:]?|金額[：:]?)\s*[¥￥]?\s*([\d,]+)\s*(?:（?\s*税込(?:み)?[?）)）]*)?",
+        r"(合計|ご請求金額|金額[\s　]*税込[：:]?|金額[：:]?)\s*[¥￥]?\s*([\d\s,\.]+)\s*(?:（?\s*税込(?:み)?[?）)）]*)?",
         text
     )
     if incl_match:
@@ -88,7 +95,7 @@ def extract_from_text(text: str) -> dict:
 
     # === 小計（税抜） ===
     excl_match = re.search(
-        r"(小計|税抜金額)[：:\s]*[¥￥]?\s*([\d,]+)\s*(?:（?\s*(?:税抜|外税)[）)）]*)?",
+        r"(小計|税抜金額)[：:\s]*[¥￥]?\s*([\d\s,\.]+)\s*(?:（?\s*(?:税抜|外税)[）)）]*)?",
         text
     )
     if excl_match:
@@ -181,6 +188,12 @@ def process_pdf(bucket_name: str, blob_name: str) -> dict:
 # ==== JSON保存 ====
 def save_json(to_bucket: str, source_blob_name: str, data: dict):
     try:
+        # --- 金額フィールドを3桁カンマ区切りで整形 ---
+        for k in ["amount_excl_tax", "amount_incl_tax"]:
+            v = data.get(k)
+            if isinstance(v, (int, float, Decimal)):
+                data[k] = f"{int(v):,}"
+
         base = source_blob_name.rsplit("/", 1)[-1]
         json_name = re.sub(r"\.pdf$", "", base, flags=re.I) + ".json"
         bucket = storage_client.bucket(to_bucket)
