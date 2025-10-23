@@ -91,7 +91,9 @@ def extract_from_text(text: str) -> dict:
         text
     )
     if incl_match:
-        fields["amount_incl_tax"] = float(_to_decimal(incl_match.group(2)))
+        val = _to_decimal(incl_match.group(2))
+        if val is not None:
+            fields["amount_incl_tax"] = float(val)
 
     # === 小計（税抜） ===
     excl_match = re.search(
@@ -99,7 +101,9 @@ def extract_from_text(text: str) -> dict:
         text
     )
     if excl_match:
-        fields["amount_excl_tax"] = float(_to_decimal(excl_match.group(2)))
+        val = _to_decimal(excl_match.group(2))
+        if val is not None:
+            fields["amount_excl_tax"] = float(val)
 
     # ===支払期日===
     keyword_pat = re.compile(r"(支払|支払い|お支払|お支払い|入金|ご入金|御入金|まで|迄)", re.I)
@@ -214,6 +218,7 @@ def on_file_finalized(cloud_event):
     bucket = data["bucket"]
     name = data["name"]
     print(f"[DEBUG] Triggered by file: gs://{bucket}/{name}")
+    print("[DEBUG] OCR text preview:", ocr_text[:1000])
 
     try:
         result = process_pdf(bucket, name)
