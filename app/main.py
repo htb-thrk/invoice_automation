@@ -14,7 +14,7 @@ import functions_framework
 # ==== 環境変数 ====
 load_dotenv()
 PROJECT_ID = os.environ.get("PROJECT_ID")
-LOCATION = os.environ.get("LOCATION", "us")  # GeminiとForm Parser両対応
+LOCATION = os.environ.get("LOCATION", "us")  # Document AI用
 PROCESSOR_ID = os.environ.get("PROCESSOR_ID")
 OUTPUT_BUCKET = os.environ.get("OUTPUT_BUCKET")
 
@@ -23,7 +23,6 @@ storage_client = storage.Client()
 docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
 )
-
 
 # ==== Utility ====
 def _to_decimal(x):
@@ -44,7 +43,7 @@ def _to_decimal(x):
 # ==== Geminiを使用して4項目を抽出 ====
 def extract_with_gemini(text: str) -> dict:
     """
-    Gemini Flash を使用して company / amount_excl_tax / amount_incl_tax / due_date を抽出
+    Gemini 2.5 Flash Previewを使用して company / amount_excl_tax / amount_incl_tax / due_date を抽出。
     """
     fields = {
         "company": None,
@@ -55,25 +54,32 @@ def extract_with_gemini(text: str) -> dict:
         "due_date": None
     }
 
-    if not text or len(text) < 50:
+    if not text or len(text) < 40:
         return fields
 
     try:
-        # Gemini初期化
+        # === Gemini初期化 ===
         vertexai.init(project=PROJECT_ID, location="us-central1")
-        model = GenerativeModel("gemini-1.5-flash")
+        model = GenerativeModel("gemini-2.0-flash")
 
+        # === 強化プロンプト ===
         prompt = f"""
-以下の請求書テキストから次の4項目を抽出して、JSON形式で出力してください。
-- company: 請求書発行会社名
-- amount_excl_tax: 小計または税抜金額（カンマ区切りで）
-- amount_incl_tax: 合計または税込金額（カンマ区切りで）
-- due_date: 支払期限やお支払期日（YYYY-MM-DD形式）
+以下は請求書のテキストです。
+次の4項目を正確に抽出して、必ずJSONのみで出力してください。
+
+抽出ルール:
+- company: 「株式会社」「有限会社」で始まる発行会社名
+- amount_excl_tax: 「小計」「税抜」「外税対象金額」のいずれかに対応する金額（数字とカンマのみ）
+- amount_incl_tax: 「合計」「ご請求金額」「総額」「税込」に対応する最大の金額（数字とカンマのみ）
+- due_date: 「支払期限」「お支払期日」「入金期日」に該当する日付（YYYY-MM-DD形式）
+- 「発行日」「請求日」「検針日」などは支払期限として扱わない
+- 金額は日本円表記の最大値を採用
+- JSON以外の説明文は出力禁止
 
 テキスト:
 {text}
 
-出力形式:
+出力フォーマット:
 {{
   "company": "...",
   "amount_excl_tax": "...",
@@ -82,17 +88,25 @@ def extract_with_gemini(text: str) -> dict:
 }}
 """
         response = model.generate_content(prompt)
-        print("[DEBUG] Gemini raw output:", response.text[:500])
+        raw = (response.text or "").strip()
+        print("[DEBUG] Gemini raw output:", raw[:300])
 
-        try:
-            ai_fields = json.loads(response.text)
-        except json.JSONDecodeError:
-            ai_fields = {}
-            # フォーマットが崩れた場合、正規表現で補完
+        ai_fields = {}
+        if raw:
+            # JSON部分のみ抽出
+            m = re.search(r"\{.*\}", raw, re.S)
+            if m:
+                try:
+                    ai_fields = json.loads(m.group(0))
+                except json.JSONDecodeError:
+                    ai_fields = {}
+
+        # === フォールバック（Geminiが失敗した場合） ===
+        if not ai_fields:
             company = re.search(r'(?:株式|有限)会社[^\s　\n]+', text)
-            amount_incl = re.search(r"[¥￥]?\s*([\d,]+)\s*(?:円|税込|合計)", text)
-            amount_excl = re.search(r"[¥￥]?\s*([\d,]+)\s*(?:円|税抜|小計)", text)
-            due = re.search(r"(\d{4})[年/.\-](\d{1,2})[月/.\-](\d{1,2})", text)
+            amount_incl = re.search(r"(?:合計|ご請求金額)[^\d¥￥]*[¥￥]?\s*([\d,]+)", text)
+            amount_excl = re.search(r"(?:小計|税抜金額)[^\d¥￥]*[¥￥]?\s*([\d,]+)", text)
+            due = re.search(r"支払期限[^\d]*(\d{4})[年/.\-](\d{1,2})[月/.\-](\d{1,2})", text)
 
             if company:
                 ai_fields["company"] = company.group(0)
@@ -106,11 +120,13 @@ def extract_with_gemini(text: str) -> dict:
                 y, mo, d = map(int, due.groups())
                 ai_fields["due_date"] = datetime(y, mo, d).date().isoformat()
 
-        # Gemini結果を fields に統合
-        fields["company"] = ai_fields.get("company")
-        fields["amount_excl_tax"] = ai_fields.get("amount_excl_tax")
-        fields["amount_incl_tax"] = ai_fields.get("amount_incl_tax")
-        fields["due_date"] = ai_fields.get("due_date")
+        # === 結果統合 ===
+        fields.update({
+            "company": ai_fields.get("company"),
+            "amount_excl_tax": ai_fields.get("amount_excl_tax"),
+            "amount_incl_tax": ai_fields.get("amount_incl_tax"),
+            "due_date": ai_fields.get("due_date")
+        })
 
     except Exception as e:
         print(f"[WARN] Gemini extraction failed: {e}")
