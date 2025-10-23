@@ -23,7 +23,7 @@ def _clean_value(s: str) -> str:
 # ==== 環境変数 ====
 load_dotenv()
 PROJECT_ID = os.environ.get("PROJECT_ID")
-LOCATION = os.environ.get("LOCATION", "asia-northeast1")
+LOCATION = os.environ.get("LOCATION", "us")
 PROCESSOR_ID = os.environ.get("PROCESSOR_ID")
 OUTPUT_BUCKET = os.environ.get("OUTPUT_BUCKET")
 
