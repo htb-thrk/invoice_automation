@@ -2,7 +2,7 @@ import pandas as pd
 
 def update_invoice_fields(df, result_data):
     """請求書データを空行に追記（既存データは上書きしない）"""
-    cols = ["社名", "金額（税込み）", "金額（税抜）", "入金期日"]
+    cols = ["company", "amount_incl_tax", "amount_excl_tax", "due_date"]
 
     # 空行を探す（すべてNaN or 空文字）
     empty_idx = df[df.isna().all(axis=1) | (df.astype(str).apply(lambda x: x.str.strip() == "")).all(axis=1)].index

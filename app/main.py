@@ -71,7 +71,7 @@ def extract_with_gemini(text: str) -> dict:
 - company: 「株式会社」「有限会社」で始まる発行会社名
 - amount_excl_tax: 「小計」「税抜」「外税対象金額」のいずれかに対応する金額（数字とカンマのみ）
 - amount_incl_tax: 「合計」「ご請求金額」「総額」「税込」に対応する最大の金額（数字とカンマのみ）
-- due_date: 「支払期限」「お支払期日」「入金期日」に該当する日付（YYYY-MM-DD形式）
+- due_date: 「支払期限」「お支払期日」「入金期日」に該当する日付（YYYY/MM/DD形式）
 - 「発行日」「請求日」「検針日」などは支払期限として扱わない
 - 金額は日本円表記の最大値を採用
 - JSON以外の説明文は出力禁止
@@ -84,7 +84,7 @@ def extract_with_gemini(text: str) -> dict:
   "company": "...",
   "amount_excl_tax": "...",
   "amount_incl_tax": "...",
-  "due_date": "YYYY-MM-DD"
+  "due_date": "YYYY/MM/DD"
 }}
 """
         response = model.generate_content(prompt)
@@ -247,10 +247,10 @@ def main():
     }
 
     # Excel更新
-    df = insert_invoice_row(df, result_data)
+    df = update_invoice_fields(df, result_data)
 
     # 保存
-    df.to_excel("請求書管理リスト.xlsx", index=False)
+    df.to_excel("updater_test.xlsx", index=False)
     print("✅ Excelを更新しました。")
 
 if __name__ == "__main__":
