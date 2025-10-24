@@ -230,3 +230,28 @@ def on_file_finalized(cloud_event):
         print(f"[INFO] Saved JSON to {out_uri}")
     except Exception as e:
         print(f"[FATAL] Unexpected error: {e}")
+
+import pandas as pd
+from excel_updater import update_invoice_fields
+
+def main():
+    # Excelファイル読み込み
+    df = pd.read_excel("updater_test.xlsx", sheet_name="詳細")
+
+    # Document AIなどで抽出した結果（例）
+    result_data = {
+        "company": "株式会社インゲージ",
+        "amount_incl_tax": 75416,
+        "amount_excl_tax": 68560,
+        "due_date": "2025-09-30"
+    }
+
+    # Excel更新
+    df = insert_invoice_row(df, result_data)
+
+    # 保存
+    df.to_excel("請求書管理リスト.xlsx", index=False)
+    print("✅ Excelを更新しました。")
+
+if __name__ == "__main__":
+    main()
