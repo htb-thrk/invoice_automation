@@ -9,8 +9,7 @@ from modules.csv_utils import save_daily_csv
 PROJECT_ID = os.environ.get("PROJECT_ID")
 LOCATION = os.environ.get("LOCATION", "us")
 PROCESSOR_ID = os.environ.get("PROCESSOR_ID")
-OUTPUT_BUCKET = os.environ.get("OUTPUT_BUCKET", "invoice-csv-output")
-
+OUTPUT_BUCKET = os.environ.get("OUTPUT_BUCKET")
 # ==== Cloud Functionsトリガー ====
 @functions_framework.cloud_event
 def on_file_finalized(cloud_event):

@@ -6,7 +6,8 @@ from google.cloud import storage
 
 def save_daily_csv(data: dict, output_bucket: str):
     """
-    CSVファイルを日次ファイルとして出力バケットに保存
+    CSVファイルを出力バケットに保存
+    （MVP版：フォルダ構造なし、バケット直下に保存）
     """
     header = ["ベンダー", "ツール名/業務内容", "利用部署", "小計（税抜）", "合計（税込）", "進捗", "入金期日"]
     today = datetime.now().strftime("%Y%m%d")
@@ -30,9 +31,9 @@ def save_daily_csv(data: dict, output_bucket: str):
         writer.writerow(row)
         tmp.flush()
 
-        # GCSへアップロード
+        # GCSへアップロード（直下に保存）
         storage_client = storage.Client()
         bucket = storage_client.bucket(output_bucket)
-        blob = bucket.blob(f"daily/{filename}")
+        blob = bucket.blob(filename)
         blob.upload_from_filename(tmp.name, content_type="text/csv")
-        print(f"✅ Uploaded CSV: gs://{output_bucket}/daily/{filename}")
+        print(f"✅ Uploaded CSV: gs://{output_bucket}/{filename}", flush=True)
