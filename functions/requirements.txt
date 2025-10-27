@@ -16,5 +16,3 @@ google-cloud-aiplatform
 
 # ==== その他 ====
 requests
-
-
