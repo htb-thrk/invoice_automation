@@ -10,7 +10,7 @@ python-dotenv
 # ==== CSV/データ処理 ====
 pandas
 
-# ==== Vertex AI (オプション) ====
+# ==== Vertex AI ====
 vertexai
 google-cloud-aiplatform
 
