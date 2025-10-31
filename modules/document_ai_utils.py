@@ -21,7 +21,8 @@ def extract_fields(doc):
         "company": None,
         "amount_excl_tax": None,
         "amount_incl_tax": None,
-        "due_date": None
+        "due_date": None,
+        "invoice_date": None,
     }
 
     entities = list(doc.entities) if getattr(doc, "entities", None) else []
