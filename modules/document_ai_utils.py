@@ -19,8 +19,6 @@ def extract_fields(doc):
     """Document AIのDocumentオブジェクトから請求書情報を抽出"""
     fields = {
         "company": None,
-        "tool": None,
-        "department": None,
         "amount_excl_tax": None,
         "amount_incl_tax": None,
         "due_date": None

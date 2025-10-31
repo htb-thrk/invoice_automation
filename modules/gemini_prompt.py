@@ -4,7 +4,7 @@ import vertexai
 
 def extract_with_gemini(text: str) -> dict:
     """
-    Geminiを使って請求書本文から主要項目をJSONで抽出
+    Geminiを使ってPDFから情報を抽出
     """
     vertexai.init(project="your-project-id", location="us-central1")
     model = GenerativeModel("gemini-2.0-flash")
