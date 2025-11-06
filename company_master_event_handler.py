@@ -1,0 +1,62 @@
+import os
+import json
+import requests
+from datetime import datetime
+
+MASTER_PATH = "company_master/company_master_latest.json"
+
+def load_master():
+    try:
+        with open(MASTER_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
+
+def save_master(data):
+    os.makedirs(os.path.dirname(MASTER_PATH), exist_ok=True)
+    with open(MASTER_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def sync_event(event_body):
+    """Webhookイベントの内容を反映する"""
+    master = load_master()
+
+    record = event_body["record"]
+    operation = event_body["type"]  # 'ADD_RECORD', 'EDIT_RECORD', 'DELETE_RECORD'
+
+    def match(rec):
+        return rec["社名"] == record["社名"]["value"]
+
+    if operation == "ADD_RECORD":
+        entry = {
+            "社名": record["社名"]["value"],
+            "ツール名／業務内容": record["ツール名／業務内容"]["value"],
+            "利用部署": record["利用部署"]["value"],
+            "n月分": record["n月分"]["value"]
+        }
+        master.append(entry)
+        print(f"🟢 追加: {entry['社名']}")
+
+    elif operation == "EDIT_RECORD":
+        for i, rec in enumerate(master):
+            if match(rec):
+                master[i].update({
+                    "ツール名／業務内容": record["ツール名／業務内容"]["value"],
+                    "利用部署": record["利用部署"]["value"],
+                    "n月分": record["n月分"]["value"]
+                })
+                print(f"🟡 更新: {rec['社名']}")
+                break
+
+    elif operation == "DELETE_RECORD":
+        master = [rec for rec in master if not match(rec)]
+        print(f"🔴 削除: {record['社名']['value']}")
+
+    save_master(master)
+    print("✅ company_master.json を更新しました")
+
+# Cloud Functionsエントリポイント
+def sync_company_master_event(request):
+    event = request.get_json(silent=True)
+    sync_event(event)
+    return ("OK", 200)
