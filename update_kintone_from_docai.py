@@ -104,7 +104,7 @@ def push_from_docai(docai_result: Dict[str, Any]) -> None:
     hit = find_vendor_exact(vendor_in, master)
 
     if not hit:
-        msg = f"未登録の会社です。先に company_master_2025.json / Kintone に登録してください: '{vendor_in}'"
+        msg = f"未登録の会社です。先に Kintone に登録してください: '{vendor_in}'"
         print(f"❌ {msg}")
         raise LookupError(msg)
 
