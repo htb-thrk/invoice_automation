@@ -19,10 +19,10 @@ jobs:
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: process-pdf-invoice
+          service: ##FIXME##
           region: asia-northeast1
           source: .
           env_vars: |
-            KINTONE_DOMAIN=https://xxxx.cybozu.com
-            KINTONE_APP_ID=560
-            KINTONE_API_TOKEN=xxxxxx
+            KINTONE_DOMAIN: "q6gul.cybozu.com"
+            KINTONE_API_TOKEN: "7HcytDDzTzjLTPOtCRxaB8RrJ9jIDVrZcXxfM5n7"
+            KINTONE_APP_ID: "560"
