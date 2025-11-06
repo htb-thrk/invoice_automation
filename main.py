@@ -11,9 +11,9 @@ def on_file_finalized(cloud_event):
 
     result = process_pdf(bucket, name)
 
-    company_info = classify_company(result.get("company_name"))
+    company_info = classify_company(result.get("vendor"))
     if company_info:
-        print("✅ 該当会社:", company_info["company_name"])
+        print("✅ 該当会社:", company_info["vendor"])
         print("📘 転記先テーブル:", company_info["target_table"])
         print("🆔 kintone app id:", company_info["kintone_app_id"])
     else:

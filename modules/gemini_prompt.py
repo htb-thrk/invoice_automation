@@ -17,7 +17,8 @@ def extract_with_gemini(text: str) -> dict:
 
     出力フォーマット:
     {{
-      "company": "...",
+      "vendor": "...",
+      "tool": "...",
       "amount_excl_tax": "...",
       "amount_incl_tax": "...",
       "due_date": "YYYY-MM-DD"

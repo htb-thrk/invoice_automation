@@ -20,9 +20,9 @@ def fetch_kintone_master():
 
     params = {
         "app": app_id,
-        "fields": ["社名", "ツール名／業務内容", "利用部署", "n月分"],
+        "fields": ["vendor", "tool",],
         "totalCount": "true"
-    }
+        }
 
     res = requests.get(url, headers=headers, params=params)
     res.raise_for_status()
@@ -31,10 +31,8 @@ def fetch_kintone_master():
     records = []
     for rec in data.get("records", []):
         record = {
-            "社名": rec.get("社名", {}).get("value"),
-            "ツール名／業務内容": rec.get("ツール名／業務内容", {}).get("value"),
-            "利用部署": rec.get("利用部署", {}).get("value"),
-            "n月分": rec.get("n月分", {}).get("value")
+            "vendor": rec.get("社名", {}).get("value"),
+            "tool": rec.get("ツール名／業務内容", {}).get("value"),
         }
         records.append(record)
 

@@ -25,32 +25,28 @@ def sync_event(event_body):
     operation = event_body["type"]  # 'ADD_RECORD', 'EDIT_RECORD', 'DELETE_RECORD'
 
     def match(rec):
-        return rec["社名"] == record["社名"]["value"]
+        return rec["vendor"] == record["vendor"]["value"]
 
     if operation == "ADD_RECORD":
         entry = {
-            "社名": record["社名"]["value"],
-            "ツール名／業務内容": record["ツール名／業務内容"]["value"],
-            "利用部署": record["利用部署"]["value"],
-            "n月分": record["n月分"]["value"]
+            "vendor": record["vendor"]["value"],
+            "tool": record["tool"]["value"],
         }
         master.append(entry)
-        print(f"🟢 追加: {entry['社名']}")
+        print(f"🟢 追加: {entry['vendor']}")
 
     elif operation == "EDIT_RECORD":
         for i, rec in enumerate(master):
             if match(rec):
                 master[i].update({
-                    "ツール名／業務内容": record["ツール名／業務内容"]["value"],
-                    "利用部署": record["利用部署"]["value"],
-                    "n月分": record["n月分"]["value"]
+                    "tool": record["tool"]["value"],
                 })
-                print(f"🟡 更新: {rec['社名']}")
+                print(f"🟡 更新: {rec['vendor']}")
                 break
 
     elif operation == "DELETE_RECORD":
         master = [rec for rec in master if not match(rec)]
-        print(f"🔴 削除: {record['社名']['value']}")
+        print(f"🔴 削除: {record['vendor']['value']}")
 
     save_master(master)
     print("✅ company_master.json を更新しました")

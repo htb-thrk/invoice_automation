@@ -18,7 +18,7 @@ def _to_decimal(x):
 def extract_fields(doc):
     """Document AIのDocumentオブジェクトから請求書情報を抽出"""
     fields = {
-        "company": None,
+        "vendor": None,
         "tool": None,
         "amount_excl_tax": None,
         "amount_incl_tax": None,
@@ -48,7 +48,7 @@ def extract_fields(doc):
 
     # --- 社名
     e_company = best_entity(["supplier_name", "vendor_name", "seller_name"])
-    fields["company"] = entity_text(e_company)
+    fields["vendor"] = entity_text(e_company)
 
     # --- 金額
     e_subtotal = best_entity(["subtotal", "net_amount"])
