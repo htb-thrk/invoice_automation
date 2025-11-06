@@ -7,9 +7,6 @@ functions-framework
 # ==== 開発補助 ====
 python-dotenv
 
-# ==== CSV/データ処理 ====
-pandas
-
 # ==== Vertex AI ====
 vertexai
 google-cloud-aiplatform
