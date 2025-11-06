@@ -8,4 +8,4 @@ RUN    pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 ENV PORT 8080
-CMD ["functions-framework", "--target=invoice_automation", "--port=8080"]
+CMD ["python", "main.py"]
