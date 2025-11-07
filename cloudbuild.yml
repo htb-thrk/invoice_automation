@@ -13,6 +13,6 @@ steps:
           --trigger-bucket htb-energy-contact-center-invoice-output \
           --service-account docai-function-sa@htbwebsite-chatbot-462005.iam.gserviceaccount.com \
           --env-vars-file env.yaml
-timeout: 900s
+timeout: 800s
 options:
   logging: CLOUD_LOGGING_ONLY
