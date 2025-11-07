@@ -9,7 +9,10 @@ KINTONE_DOMAIN = os.environ["KINTONE_DOMAIN"]
 APP_ID = os.environ["KINTONE_APP_ID"]
 API_TOKEN = os.environ["KINTONE_API_TOKEN"]
 
-MASTER_PATH = "C:/Users/bpr/Documents/invoice_automation/company_master_2025.json"
+MASTER_PATH = os.environ.get(
+    "MASTER_PATH",
+    os.path.join(os.path.dirname(__file__), "company_master_2025.json")
+)
 
 
 # ==========================

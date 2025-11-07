@@ -4,8 +4,8 @@ import re
 from flask import Request
 
 KINTONE_DOMAIN = os.environ["KINTONE_DOMAIN"]
-if not KINTONE_DOMAIN.startswith("http"):
-    KINTONE_DOMAIN = "https://" + KINTONE_DOMAIN
+APP_ID = os.environ["KINTONE_APP_ID"]
+API_TOKEN = os.environ["KINTONE_API_TOKEN"]
 
 MASTER_PATH = os.environ.get(
     "MASTER_PATH",

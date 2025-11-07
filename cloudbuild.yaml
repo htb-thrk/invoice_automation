@@ -4,7 +4,7 @@ steps:
     args:
       - "-c"
       - |
-        echo "🚀 Deploying Cloud Function..."
+        echo "Deploying Cloud Function..."
         gcloud functions deploy invoice-docai-handler \
           --gen2 \
           --runtime python311 \
