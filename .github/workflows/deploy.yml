@@ -27,7 +27,7 @@ jobs:
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           project_id: htbwebsite-chatbot-462005
-          service: invoice-docai-handler
+          service: invoice-automation
           region: asia-northeast1
           source: .
           flags: --allow-unauthenticated
