@@ -15,7 +15,7 @@ build/
 dist/
 *.egg-info/
 pip-wheel-metadata/
-env.yml
+env.yaml
 
 # Secrets / service account keys
 *.json
