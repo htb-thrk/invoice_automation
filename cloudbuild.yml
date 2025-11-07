@@ -27,7 +27,7 @@ jobs:
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           project_id: htbwebsite-chatbot-462005
-          service: invoice-web # ← Cloud Run用に別サービス名にするのが安全
+          service: invoice-docai-handler
           region: asia-northeast1
           source: .
           flags: --allow-unauthenticated
