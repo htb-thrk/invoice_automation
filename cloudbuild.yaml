@@ -19,7 +19,7 @@ jobs:
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: ##FIXME##
+          service: invoice-docai-handler
           region: asia-northeast1
           source: .
           env_vars: |
