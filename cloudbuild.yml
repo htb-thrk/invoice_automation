@@ -1,28 +1,37 @@
 name: Deploy to Cloud Run
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
+      # 推奨: Workload Identity Federation（JSON鍵不要）
+      - id: auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: docai-function-sa@htbwebsite-chatbot-462005.iam.gserviceaccount.com
+          project_id: htbwebsite-chatbot-462005
+
+      - uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: invoice-docai-handler
+          project_id: htbwebsite-chatbot-462005
+          service: invoice-web # ← Cloud Run用に別サービス名にするのが安全
           region: asia-northeast1
           source: .
-          env_vars: |
-            KINTONE_DOMAIN: "q6gul.cybozu.com"
-            KINTONE_API_TOKEN: "7HcytDDzTzjLTPOtCRxaB8RrJ9jIDVrZcXxfM5n7"
-            KINTONE_APP_ID: "560"
+          flags: --allow-unauthenticated
+          env_vars: >
+            KINTONE_DOMAIN=${{ secrets.KINTONE_DOMAIN }},
+            KINTONE_API_TOKEN=${{ secrets.KINTONE_API_TOKEN }},
+            KINTONE_APP_ID=${{ secrets.KINTONE_APP_ID }}
