@@ -4,7 +4,7 @@ import re
 import functions_framework
 from google.cloud import storage
 from modules.document_ai_utils import process_pdf
-from modules.update_kintone_from_docai import post_to_kintone
+from modules.update_kintone_from_docai import push_from_docai
 from functions.json_saver import save_json
 
 # === 定数設定 ===
