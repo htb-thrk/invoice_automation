@@ -1,0 +1,66 @@
+main:
+  params: [event]
+  steps:
+    - init:
+        assign:
+          - bucket: ${event.data.bucket}
+          - file: ${event.data.name}
+          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - location: "us-central1" # Document AIのリージョン
+
+    - process_document:
+        call: googleapis.documentai.v1.projects.locations.processors.process
+        args:
+          name: ${"projects/" + project_id + "/locations/" + location + "/processors/YOUR_PROCESSOR_ID"}
+          body:
+            gcsDocument:
+              gcsUri: ${"gs://" + bucket + "/" + file}
+              mimeType: "application/pdf"
+        result: doc_ai_result
+
+    - extract_text:
+        assign:
+          - invoice_data: ${doc_ai_result.document.text}
+          # 実際にはここでJSON構造へのパースや必要なフィールドの抽出が必要
+
+    - check_and_register_master:
+        call: http.post
+        args:
+          url: https://YOUR_REGION-YOUR_PROJECT.cloudfunctions.net/master_check_function
+          auth:
+            type: OIDC
+          body:
+            invoice_data: ${invoice_data}
+        result: master_check_result
+
+    - push_to_kintone:
+        call: http.post
+        args:
+          url: https://YOUR_SUBDOMAIN.cybozu.com/k/v1/record.json
+          headers:
+            X-Cybozu-API-Token: "YOUR_KINTONE_API_TOKEN"
+            Content-Type: "application/json"
+          body:
+            app: YOUR_APP_ID
+            record:
+              field_code_1:
+                value: ${master_check_result.body.customer_name}
+              # ... 他のフィールド
+        result: kintone_result
+
+    - return_result:
+        return: ${kintone_result}
+
+
+# 説明:
+# main: ワークフローのエントリーポイントです。Storageからのイベントデータ (event) を受け取ります。
+
+# init: バケット名やファイル名を変数に割り当てます。
+
+# process_document: Document AIのAPIを直接呼び出してPDFを処理します。
+
+# check_and_register_master: Pythonで書かれたCloud FunctionsをHTTP経由で呼び出し、マスタ参照・登録を行います。
+
+# push_to_kintone: KintoneのREST APIを直接呼び出してデータを登録します。（認証トークンなどは本来Secret Managerで管理すべきです）
+
+# このように、各ステップを順番に定義していくだけで、複雑なオーケストレーションが可能になります。
