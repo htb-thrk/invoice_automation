@@ -1,0 +1,19 @@
+# Cloud Functions デプロイ時に除外
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.git/
+.github/
+.env
+.venv/
+venv/
+*.log
+.gcloudignore
+.gitignore

@@ -5,7 +5,7 @@ import functions_framework
 from google.cloud import storage
 from modules.document_ai_utils import process_pdf
 from modules.update_kintone_from_docai import push_from_docai
-from functions.json_saver import save_json
+from functions.json_saver import save_json_to_gcs
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_MASTER_PATH = os.path.join(PROJECT_ROOT, "company_master_2025.json")
@@ -56,7 +56,8 @@ def on_file_finalized(cloud_event):
         print("✅ Kintoneへの登録完了")
 
         # JSON結果を保存
-        out_uri = save_json(bucket, name, result)
+        output_bucket = os.environ.get("OUTPUT_BUCKET", "htb-energy-contact-center-invoice-output")
+        out_uri = save_json_to_gcs(result, output_bucket, name)
         print(f"💾 JSONを保存しました: {out_uri}")
 
     except Exception as e:

@@ -9,9 +9,8 @@ def fetch_kintone_master():
     company_master.json に自動反映する
     """
     domain = os.environ["KINTONE_DOMAIN"]
-    app_id = os.environ["KINTONE_MASTER_APP_ID"]   # ← 会社マスタ管理アプリID
-    token = os.environ["KINTONE_MASTER_API_TOKEN"] # ← そのアプリのAPIトークン
-
+    app_id = os.environ["KINTONE_MASTER_APP_ID"] 
+    token = os.environ["KINTONE_MASTER_API_TOKEN"]
     url = f"https://{domain}/k/v1/records.json"
     headers = {
         "X-Cybozu-API-Token": token,

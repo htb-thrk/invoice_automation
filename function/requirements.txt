@@ -4,9 +4,6 @@ google-cloud-documentai
 google-api-core
 functions-framework
 
-# ==== 開発補助====
-flask
-gunicorn
 # ==== Vertex AI ====
 vertexai
 google-cloud-aiplatform

@@ -1,0 +1,6 @@
+# ==== Cloud Run Web App用 ====
+google-cloud-storage
+flask
+gunicorn
+python-dotenv
+werkzeug

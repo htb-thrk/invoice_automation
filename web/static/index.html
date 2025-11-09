@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Invoice Uploader</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>請求書PDFアップロード</h1>
+
+    <!-- ドラッグ&ドロップエリア -->
+    <div id="dropZone" class="drop-zone">
+      <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      <p class="drop-text">PDFファイルをドラッグ＆ドロップ</p>
+      <p class="drop-subtext">または</p>
+      <label for="fileInput" class="file-label">ファイルを選択</label>
+      <input id="fileInput" type="file" name="files" accept="application/pdf" multiple hidden />
+    </div>
+
+    <!-- 選択されたファイル一覧 -->
+    <div id="fileList" class="file-list"></div>
+
+    <!-- アップロードボタンとメッセージ -->
+    <div id="controls" class="controls" style="display:none;">
+      <button id="uploadBtn" type="button">アップロード</button>
+      <button id="clearBtn" type="button" class="btn-secondary">クリア</button>
+    </div>
+    <div id="message" role="status" aria-live="polite"></div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

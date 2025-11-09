@@ -2,8 +2,6 @@ import os
 from flask import Flask, request, render_template_string
 from google.cloud import storage
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r"C:\Users\bpr\Documents\invoice_automation\htbwebsite-chatbot-462005-96b72ed68c17.json"
-
 app = Flask(__name__)
 
 # === 設定 ===
