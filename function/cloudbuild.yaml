@@ -1,0 +1,20 @@
+steps:
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        echo "Deploying Cloud Function..."
+        gcloud functions deploy invoice-docai-handler \
+          --gen2 \
+          --runtime python311 \
+          --region asia-northeast1 \
+          --entry-point on_file_finalized \
+          --source . \
+          --trigger-bucket htb-energy-contact-center-invoice-input \
+          --service-account docai-function-sa@htbwebsite-chatbot-462005.iam.gserviceaccount.com \
+          --set-env-vars PROJECT_ID=htbwebsite-chatbot-462005,LOCATION=us,PROCESSOR_ID=${_PROCESSOR_ID},KINTONE_DOMAIN=${_KINTONE_DOMAIN},KINTONE_APP_ID=${_KINTONE_APP_ID},KINTONE_API_TOKEN=${_KINTONE_API_TOKEN},OUTPUT_BUCKET=htb-energy-contact-center-invoice-output
+
+timeout: 800s
+options:
+  logging: CLOUD_LOGGING_ONLY

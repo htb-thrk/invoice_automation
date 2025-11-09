@@ -1,0 +1,13 @@
+# ==== Google Cloud SDK ====
+google-cloud-storage
+google-cloud-documentai
+google-api-core
+functions-framework
+
+# ==== Vertex AI ====
+vertexai
+google-cloud-aiplatform
+
+# ==== その他 ====
+requests
+python-dotenv

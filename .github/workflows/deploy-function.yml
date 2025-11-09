@@ -1,0 +1,41 @@
+name: Deploy Cloud Function
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'function/**'
+      - '.github/workflows/deploy-function.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Workload Identity Federation
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: docai-function-sa@htbwebsite-chatbot-462005.iam.gserviceaccount.com
+          project_id: htbwebsite-chatbot-462005
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy Cloud Function
+        working-directory: ./function
+        run: |
+          gcloud functions deploy invoice-docai-handler \
+            --gen2 \
+            --runtime python311 \
+            --region asia-northeast1 \
+            --entry-point on_file_finalized \
+            --source . \
+            --trigger-bucket htb-energy-contact-center-invoice-input \
+            --service-account docai-function-sa@htbwebsite-chatbot-462005.iam.gserviceaccount.com \
+            --set-env-vars PROJECT_ID=htbwebsite-chatbot-462005,LOCATION=us,PROCESSOR_ID=${{ secrets.PROCESSOR_ID }},KINTONE_DOMAIN=${{ secrets.KINTONE_DOMAIN }},KINTONE_APP_ID=${{ secrets.KINTONE_APP_ID }},KINTONE_API_TOKEN=${{ secrets.KINTONE_API_TOKEN }},OUTPUT_BUCKET=htb-energy-contact-center-invoice-output
