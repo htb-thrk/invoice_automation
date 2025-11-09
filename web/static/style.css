@@ -1,0 +1,183 @@
+:root{--bg:#f7f9fb;--card:#fff;--accent:#2b7cff;--border:#e1e8ed;--text:#1a202c;--text-light:#718096;--success:#10b981;--error:#ef4444}
+body{
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background:var(--bg);
+  margin:0; padding:40px;
+  color:var(--text);
+}
+.container{
+  max-width:640px;
+  margin:0 auto;
+  background:var(--card);
+  padding:32px;
+  border-radius:12px;
+  box-shadow:0 6px 18px rgba(20,30,40,0.06);
+}
+h1{
+  margin:0 0 24px 0;
+  font-size:24px;
+  font-weight:600;
+}
+
+/* ドラッグ&ドロップエリア */
+.drop-zone{
+  border:2px dashed var(--border);
+  border-radius:8px;
+  padding:48px 24px;
+  text-align:center;
+  transition:all 0.2s;
+  cursor:pointer;
+}
+.drop-zone:hover, .drop-zone.drag-over{
+  border-color:var(--accent);
+  background:rgba(43,124,255,0.03);
+}
+.upload-icon{
+  color:var(--accent);
+  margin-bottom:16px;
+}
+.drop-text{
+  margin:0 0 8px 0;
+  font-size:16px;
+  font-weight:500;
+  color:var(--text);
+}
+.drop-subtext{
+  margin:0 0 16px 0;
+  font-size:14px;
+  color:var(--text-light);
+}
+.file-label{
+  display:inline-block;
+  background:var(--accent);
+  color:#fff;
+  padding:10px 20px;
+  border-radius:6px;
+  cursor:pointer;
+  font-size:14px;
+  font-weight:500;
+  transition:background 0.2s;
+}
+.file-label:hover{
+  background:#1d6de8;
+}
+
+/* ファイルリスト */
+.file-list{
+  margin-top:20px;
+}
+.file-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:12px 16px;
+  background:#f8fafc;
+  border:1px solid var(--border);
+  border-radius:6px;
+  margin-bottom:8px;
+}
+.file-info{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex:1;
+}
+.file-icon{
+  width:32px;
+  height:32px;
+  background:var(--accent);
+  color:#fff;
+  border-radius:4px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:12px;
+  font-weight:600;
+}
+.file-details{
+  flex:1;
+}
+.file-name{
+  font-size:14px;
+  font-weight:500;
+  color:var(--text);
+  margin:0 0 2px 0;
+}
+.file-size{
+  font-size:12px;
+  color:var(--text-light);
+  margin:0;
+}
+.file-remove{
+  background:transparent;
+  border:none;
+  color:var(--error);
+  cursor:pointer;
+  padding:4px 8px;
+  font-size:20px;
+  line-height:1;
+  transition:opacity 0.2s;
+}
+.file-remove:hover{
+  opacity:0.7;
+}
+
+/* コントロールボタン */
+.controls{
+  margin-top:20px;
+  display:flex;
+  gap:12px;
+}
+button{
+  background:var(--accent);
+  color:#fff;
+  border:0;
+  padding:12px 24px;
+  border-radius:6px;
+  cursor:pointer;
+  font-size:14px;
+  font-weight:500;
+  transition:background 0.2s;
+  flex:1;
+}
+button:hover{
+  background:#1d6de8;
+}
+button:disabled{
+  background:#cbd5e0;
+  cursor:not-allowed;
+}
+.btn-secondary{
+  background:#e2e8f0;
+  color:var(--text);
+}
+.btn-secondary:hover{
+  background:#cbd5e0;
+}
+
+/* メッセージ */
+#message{
+  margin-top:16px;
+  padding:12px 16px;
+  border-radius:6px;
+  font-size:14px;
+  display:none;
+}
+#message.success{
+  background:#d1fae5;
+  color:#065f46;
+  border:1px solid #6ee7b7;
+  display:block;
+}
+#message.error{
+  background:#fee2e2;
+  color:#991b1b;
+  border:1px solid #fca5a5;
+  display:block;
+}
+#message.info{
+  background:#dbeafe;
+  color:#1e40af;
+  border:1px solid #93c5fd;
+  display:block;
+}
