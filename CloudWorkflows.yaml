@@ -1,66 +1,94 @@
 main:
   params: [event]
+
   steps:
-    - init:
-        assign:
-          - bucket: ${event.data.bucket}
-          - file: ${event.data.name}
-          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
-          - location: "us-central1" # Document AIのリージョン
+  - init:
+      assign:
+main:
+  params: [event]
 
-    - process_document:
-        call: googleapis.documentai.v1.projects.locations.processors.process
-        args:
-          name: ${"projects/" + project_id + "/locations/" + location + "/processors/YOUR_PROCESSOR_ID"}
-          body:
-            gcsDocument:
-              gcsUri: ${"gs://" + bucket + "/" + file}
-              mimeType: "application/pdf"
-        result: doc_ai_result
-
-    - extract_text:
-        assign:
-          - invoice_data: ${doc_ai_result.document.text}
-          # 実際にはここでJSON構造へのパースや必要なフィールドの抽出が必要
-
-    - check_and_register_master:
-        call: http.post
-        args:
-          url: https://YOUR_REGION-YOUR_PROJECT.cloudfunctions.net/master_check_function
-          auth:
-            type: OIDC
-          body:
-            invoice_data: ${invoice_data}
-        result: master_check_result
-
-    - push_to_kintone:
-        call: http.post
-        args:
-          url: https://YOUR_SUBDOMAIN.cybozu.com/k/v1/record.json
-          headers:
-            X-Cybozu-API-Token: "YOUR_KINTONE_API_TOKEN"
-            Content-Type: "application/json"
-          body:
-            app: YOUR_APP_ID
-            record:
-              field_code_1:
-                value: ${master_check_result.body.customer_name}
-              # ... 他のフィールド
-        result: kintone_result
-
-    - return_result:
-        return: ${kintone_result}
+  steps:
+  - init:
+      assign:
+        - bucket: ${event.data.bucket}
+        - file: ${event.data.name}
+        - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+        - location: "us-central1"
+        - processor_id: ${sys.get_env("PROCESSOR_ID")}
+        - master_check_url: ${sys.get_env("MASTER_CHECK_URL")}
+        - kintone_url: ${sys.get_env("KINTONE_URL")}
+        - kintone_token: ${sys.get_env("KINTONE_TOKEN")}
+        - kintone_app_id: ${sys.get_env("KINTONE_APP_ID")}
 
 
-# 説明:
-# main: ワークフローのエントリーポイントです。Storageからのイベントデータ (event) を受け取ります。
+  # ------------------------------
+  # Step 1: Document AI 呼び出し
+  # ------------------------------
+  - process_document:
+      call: googleapis.documentai.v1.projects.locations.processors.process
+      args:
+        name: ${"projects/" + project_id + "/locations/" + location + "/processors/" + processor_id}
+        body:
+          rawDocument:
+            gcsUri: ${"gs://" + bucket + "/" + file}
+            mimeType: "application/pdf"
+      result: doc_ai_result
 
-# init: バケット名やファイル名を変数に割り当てます。
+  # ------------------------------
+  # Step 2: テキスト抽出（JSON整形）
+  # ------------------------------
+  - extract_text:
+      assign:
+        - invoice_text: ${doc_ai_result.document.text}
+        # 実運用ではここで正規表現または entity 情報を使って抽出・整形します
+        - invoice_data:
+            text: ${invoice_text}
+            bucket: ${bucket}
+            file: ${file}
 
-# process_document: Document AIのAPIを直接呼び出してPDFを処理します。
+  # ------------------------------
+  # Step 3: マスタ照合・登録（Cloud Functions）
+  # ------------------------------
+  - check_and_register_master:
+      call: http.post
+      args:
+        url: ${master_check_url}
+        auth:
+          type: OIDC
+        headers:
+          Content-Type: "application/json"
+        body:
+          invoice_data: ${invoice_data}
+      result: master_check_result
 
-# check_and_register_master: Pythonで書かれたCloud FunctionsをHTTP経由で呼び出し、マスタ参照・登録を行います。
+  # ------------------------------
+  # Step 4: kintone登録
+  # ------------------------------
+  - push_to_kintone:
+      call: http.post
+      args:
+        url: ${kintone_url}
+        headers:
+          X-Cybozu-API-Token: ${kintone_token}
+          Content-Type: "application/json"
+        body:
+          app: ${kintone_app_id}
+          record:
+            company_tool:
+              value: ${master_check_result.body.company_tool}
+            subtotal:
+              value: ${master_check_result.body.subtotal}
+            total:
+              value: ${master_check_result.body.total}
+            due_date:
+              value: ${master_check_result.body.due_date}
+      result: kintone_result
 
-# push_to_kintone: KintoneのREST APIを直接呼び出してデータを登録します。（認証トークンなどは本来Secret Managerで管理すべきです）
-
-# このように、各ステップを順番に定義していくだけで、複雑なオーケストレーションが可能になります。
+  # ------------------------------
+  # Step 5: 結果を返す
+  # ------------------------------
+  - return_result:
+      return:
+        status: "OK"
+        kintone_response: ${kintone_result.body}
+        file: ${file}
