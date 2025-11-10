@@ -1,0 +1,18 @@
+steps:
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        echo "Deploying Cloud Function..."
+        gcloud functions deploy invoice-docai-handler \
+          --gen2 \
+          --runtime python311 \
+          --region asia-northeast1 \
+          --entry-point on_file_finalized \
+          --trigger-bucket htb-energy-contact-center-invoice-output \
+          --service-account docai-function-sa@htbwebsite-chatbot-462005.iam.gserviceaccount.com \
+          --env-vars-file env.yaml
+timeout: 800s
+options:
+  logging: CLOUD_LOGGING_ONLY
