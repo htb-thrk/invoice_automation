@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>請求書アップロード</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📄 請求書PDFアップロード</h1>
+        
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📁</div>
+            <p>PDFファイルをドラッグ＆ドロップ</p>
+            <p class="or">または</p>
+            <label for="fileInput" class="file-select-btn">ファイルを選択</label>
+            <input type="file" id="fileInput" multiple accept=".pdf" style="display: none;">
+        </div>
+
+        <div id="fileList" class="file-list"></div>
+
+        <button id="uploadBtn" class="upload-btn" disabled>アップロード</button>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
