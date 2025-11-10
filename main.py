@@ -5,7 +5,7 @@ import functions_framework
 from google.cloud import storage
 from modules.document_ai_utils import process_pdf
 from modules.update_kintone_from_docai import push_from_docai
-from functions.json_saver import save_json
+from functions.json_saver import save_json_to_gcs
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_MASTER_PATH = os.path.join(PROJECT_ROOT, "company_master_2025.json")
