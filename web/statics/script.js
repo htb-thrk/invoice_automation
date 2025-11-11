@@ -1,16 +1,19 @@
-// Client-side upload script for the invoice uploader with drag & drop and multiple files
-const dropZone = document.getElementById('dropZone');
+/*
+  Cleaned and consolidated upload script.
+  - Uses elements that exist in statics/index.html: uploadArea, fileInput, fileList, uploadBtn, result
+  - Provides drag & drop, file list, remove, and upload behavior
+*/
+
+const uploadArea = document.getElementById('uploadArea');
 const fileInput = document.getElementById('fileInput');
 const fileList = document.getElementById('fileList');
 const uploadBtn = document.getElementById('uploadBtn');
-const clearBtn = document.getElementById('clearBtn');
-const controls = document.getElementById('controls');
-const msg = document.getElementById('message');
+const result = document.getElementById('result');
 
 let selectedFiles = [];
 
-// ファイルサイズをフォーマット
 function formatFileSize(bytes) {
+  if (!bytes && bytes !== 0) return '';
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -18,249 +21,134 @@ function formatFileSize(bytes) {
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
-// メッセージ表示
-function showMessage(text, type = 'info') {
-  msg.textContent = text;
-  msg.className = type;
+function showResult(message, type = 'info') {
+  if (!result) return console.warn('result element not found');
+  result.className = `result ${type}`;
+  result.textContent = message;
+  result.style.display = 'block';
+  // hide after 4s
+  setTimeout(() => { result.style.display = 'none'; }, 4000);
 }
 
-function hideMessage() {
-  msg.className = '';
-  msg.style.display = 'none';
+function clearResult() {
+  if (!result) return;
+  result.textContent = '';
+  result.className = 'result';
+  result.style.display = 'none';
 }
 
-// ファイルリストを更新
-function updateFileList() {
+function renderFileList() {
   fileList.innerHTML = '';
-  
   if (selectedFiles.length === 0) {
-    controls.style.display = 'none';
-    hideMessage();
+    uploadBtn.disabled = true;
     return;
   }
 
-  controls.style.display = 'flex';
-  
-  selectedFiles.forEach((file, index) => {
-    const item = document.createElement('div');
-    item.className = 'file-item';
-    item.innerHTML = `
-      <div class="file-info">
-        <div class="file-icon">PDF</div>
-        <div class="file-details">
-          <p class="file-name">${file.name}</p>
-          <p class="file-size">${formatFileSize(file.size)}</p>
-        </div>
-      </div>
-      <button class="file-remove" data-index="${index}" title="削除">×</button>
+  selectedFiles.forEach((file, idx) => {
+    const row = document.createElement('div');
+    row.className = 'file-item';
+    row.innerHTML = `
+      <span class="file-name">${file.name}</span>
+      <span class="file-size">${formatFileSize(file.size)}</span>
+      <button type="button" class="remove-btn" data-idx="${idx}">
+        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="#ff4757"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg>
+      </button>
     `;
-    fileList.appendChild(item);
+    fileList.appendChild(row);
   });
 
-  // 削除ボタンのイベント
-  document.querySelectorAll('.file-remove').forEach(btn => {
+  // attach handlers for remove buttons
+  fileList.querySelectorAll('.remove-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      const index = parseInt(e.target.dataset.index);
-      selectedFiles.splice(index, 1);
-      updateFileList();
+      const i = parseInt(e.currentTarget.dataset.idx);
+      selectedFiles.splice(i, 1);
+      renderFileList();
     });
   });
+
+  uploadBtn.disabled = selectedFiles.length === 0;
 }
 
-// ファイル追加（重複チェック付き）
-function addFiles(files) {
-  const pdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-  
-  if (pdfFiles.length === 0) {
-    showMessage('PDFファイルを選択してください', 'error');
+function addFilesFromList(fileListInput) {
+  const files = Array.from(fileListInput).filter(f => f.name && f.name.toLowerCase().endsWith('.pdf'));
+  if (files.length === 0) {
+    showResult('PDFファイルを選択してください', 'error');
     return;
   }
 
-  // 重複チェック（ファイル名とサイズで判定）
-  pdfFiles.forEach(file => {
-    const isDuplicate = selectedFiles.some(
-      f => f.name === file.name && f.size === file.size
-    );
-    if (!isDuplicate) {
-      selectedFiles.push(file);
-    }
+  // dedupe by name+size
+  files.forEach(f => {
+    const exists = selectedFiles.some(s => s.name === f.name && s.size === f.size);
+    if (!exists) selectedFiles.push(f);
   });
 
-  updateFileList();
-  hideMessage();
+  renderFileList();
+  clearResult();
 }
 
-// ドラッグ&ドロップイベント
-dropZone.addEventListener('click', () => fileInput.click());
+// Drag & Drop handlers -- prevent default on document to avoid browser opening file
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+  document.addEventListener(eventName, (e) => e.preventDefault(), false);
+});
 
-dropZone.addEventListener('dragover', (e) => {
+uploadArea.addEventListener('dragover', (e) => {
   e.preventDefault();
-  dropZone.classList.add('drag-over');
+  uploadArea.classList.add('dragover');
 });
 
-dropZone.addEventListener('dragleave', () => {
-  dropZone.classList.remove('drag-over');
+uploadArea.addEventListener('dragleave', (e) => {
+  uploadArea.classList.remove('dragover');
 });
 
-dropZone.addEventListener('drop', (e) => {
+uploadArea.addEventListener('drop', (e) => {
   e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  addFiles(e.dataTransfer.files);
+  uploadArea.classList.remove('dragover');
+  if (e.dataTransfer && e.dataTransfer.files) {
+    addFilesFromList(e.dataTransfer.files);
+  }
 });
 
-// ファイル選択
+// file input
 fileInput.addEventListener('change', (e) => {
-  addFiles(e.target.files);
-  fileInput.value = ''; // 同じファイルを再選択可能にする
+  if (e.target && e.target.files) {
+    addFilesFromList(e.target.files);
+    // allow re-selecting same file
+    fileInput.value = '';
+  }
 });
 
-// クリアボタン
-clearBtn.addEventListener('click', () => {
-  selectedFiles = [];
-  updateFileList();
-  fileInput.value = '';
-  hideMessage();
-});
-
-// アップロードボタン
+// upload
 uploadBtn.addEventListener('click', async () => {
   if (selectedFiles.length === 0) {
-    showMessage('ファイルを選択してください', 'error');
+    showResult('ファイルを選択してください', 'error');
     return;
   }
 
   uploadBtn.disabled = true;
-  clearBtn.disabled = true;
-  showMessage(`${selectedFiles.length}個のファイルをアップロード中...`, 'info');
+  uploadBtn.textContent = 'アップロード中...';
+  clearResult();
 
-  const formData = new FormData();
-  selectedFiles.forEach(file => {
-    formData.append('files', file);
-  });
+  const fd = new FormData();
+  selectedFiles.forEach(f => fd.append('files', f));
 
   try {
-    const res = await fetch('/upload', { method: 'POST', body: formData });
+    const res = await fetch('/upload', { method: 'POST', body: fd });
     const data = await res.json();
-    
-    if (res.ok) {
-      showMessage(data.message || 'アップロード完了', 'success');
+    if (res.ok && data) {
+      showResult(data.message || 'アップロード完了', 'success');
       selectedFiles = [];
-      updateFileList();
-      fileInput.value = '';
+      renderFileList();
     } else {
-      showMessage(data.message || `エラー: ${res.status}`, 'error');
+      showResult(data?.message || `アップロード失敗: ${res.status}`, 'error');
     }
-  } catch (e) {
-    console.error(e);
-    showMessage('ネットワークエラーが発生しました', 'error');
+  } catch (err) {
+    console.error(err);
+    showResult('ネットワークエラーが発生しました', 'error');
   } finally {
     uploadBtn.disabled = false;
-    clearBtn.disabled = false;
+    uploadBtn.textContent = 'アップロード';
   }
 });
 
-const uploadArea = document.getElementById('uploadArea');
-
-// ドラッグ＆ドロップ
-uploadArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadArea.classList.add('dragover');
-});
-
-uploadArea.addEventListener('dragleave', () => {
-    uploadArea.classList.remove('dragover');
-});
-
-uploadArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadArea.classList.remove('dragover');
-    handleFiles(e.dataTransfer.files);
-});
-
-// ファイル選択
-fileInput.addEventListener('change', (e) => {
-    handleFiles(e.target.files);
-});
-
-function handleFiles(files) {
-    const pdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-    
-    if (pdfFiles.length === 0) {
-        showResult('PDFファイルを選択してください', 'error');
-        return;
-    }
-
-    selectedFiles = pdfFiles;
-    displayFileList();
-    uploadBtn.disabled = false;
-}
-
-function displayFileList() {
-    fileList.innerHTML = '<h3>選択されたファイル:</h3>';
-    selectedFiles.forEach((file, index) => {
-        const fileItem = document.createElement('div');
-        fileItem.className = 'file-item';
-        fileItem.innerHTML = `
-            <span>${file.name}</span>
-            <span class="file-size">${(file.size / 1024).toFixed(1)} KB</span>
-            <button onclick="removeFile(${index})">✕</button>
-        `;
-        fileList.appendChild(fileItem);
-    });
-}
-
-function removeFile(index) {
-    selectedFiles.splice(index, 1);
-    if (selectedFiles.length === 0) {
-        fileList.innerHTML = '';
-        uploadBtn.disabled = true;
-    } else {
-        displayFileList();
-    }
-}
-
-uploadBtn.addEventListener('click', async () => {
-    if (selectedFiles.length === 0) return;
-
-    const formData = new FormData();
-    selectedFiles.forEach(file => {
-        formData.append('files', file);
-    });
-
-    uploadBtn.disabled = true;
-    uploadBtn.textContent = 'アップロード中...';
-
-    try {
-        const response = await fetch('/upload', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            showResult(data.message, 'success');
-            selectedFiles = [];
-            fileList.innerHTML = '';
-            fileInput.value = '';
-        } else {
-            showResult(data.message, 'error');
-        }
-
-    } catch (error) {
-        showResult('エラーが発生しました: ' + error.message, 'error');
-    } finally {
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = 'アップロード';
-    }
-});
-
-function showResult(message, type) {
-    result.className = `result ${type}`;
-    result.textContent = message;
-    result.style.display = 'block';
-
-    setTimeout(() => {
-        result.style.display = 'none';
-    }, 5000);
-}
+// initialize
+renderFileList();
