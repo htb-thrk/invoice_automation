@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.venv
+venv
+env
+
+# IDE
+.vscode
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+credentials/
+*.json.bak
+*.log
+
+# Node modules (if any)
+node_modules
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+tests/
+*.test.py
+
+# IaC
+IaC/
+.github/
