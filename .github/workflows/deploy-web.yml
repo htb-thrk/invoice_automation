@@ -38,21 +38,18 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Login to Artifact Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: oauth2accesstoken
-          password: ${{ steps.auth.outputs.access_token }}
-
       - name: Create Artifact Registry repository (if not exists)
         run: |
           gcloud artifacts repositories create ${{ env.REPOSITORY }} \
             --repository-format=docker \
             --location=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} || echo "Repository already exists"
+            --project=${{ env.PROJECT_ID }} 2>/dev/null || echo "Repository already exists"
 
-      - name: Build Docker image
+      - name: Configure Docker authentication
+        run: |
+          gcloud auth configure-docker ${{ env.REGISTRY }}
+
+      - name: Build and push Docker image
         run: |
           IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
           IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest"
@@ -80,4 +77,3 @@ jobs:
             --region ${{ env.REGION }} \
             --format 'value(status.url)')
           echo "🚀 Deployed to: $SERVICE_URL"
-          echo "SERVICE_URL=${SERVICE_URL}" >> $GITHUB_OUTPUT
