@@ -11,7 +11,7 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: asia-northeast1
-  SERVICE_NAME: invoice-upload-app
+  SERVICE_NAME: invoice-upload-web.app
 
 jobs:
   deploy:
