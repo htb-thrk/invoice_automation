@@ -1,4 +1,5 @@
 name: Deploy Cloud Functions
+#FIXME: change deploy type source to container
 
 on:
   push:
