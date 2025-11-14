@@ -20,8 +20,8 @@ def extract_fields(doc):
     fields = {
         "vendor": None,
         "tool": None,
-        "amount_excl_tax": None,
-        "amount_incl_tax": None,
+        "subtotal": None,
+        "total": None,
         "due_date": None,
         "invoice_date": None,
     }
@@ -55,8 +55,8 @@ def extract_fields(doc):
     e_total = best_entity(["total", "grand_total"])
     subtotal = _to_decimal(entity_text(e_subtotal))
     total = _to_decimal(entity_text(e_total))
-    fields["amount_excl_tax"] = float(subtotal) if subtotal else None
-    fields["amount_incl_tax"] = float(total) if total else None
+    fields["subtotal"] = float(subtotal) if subtotal else None
+    fields["total"] = float(total) if total else None
 
     # --- 入金期日
     e_due = best_entity(["due_date", "payment_due_date"])

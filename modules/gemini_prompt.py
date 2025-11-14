@@ -6,7 +6,7 @@ def extract_with_gemini(text: str) -> dict:
     """
     Geminiを使ってPDFから情報を抽出
     """
-    vertexai.init(project="your-project-id", location="us-central1")
+    vertexai.init(project="", location="us-central1")
     model = GenerativeModel("gemini-2.0-flash")
 
     prompt = f"""
@@ -19,8 +19,8 @@ def extract_with_gemini(text: str) -> dict:
     {{
       "vendor": "...",
       "tool": "...",
-      "amount_excl_tax": "...",
-      "amount_incl_tax": "...",
+      "subtotal": "...",
+      "total": "...",
       "due_date": "YYYY-MM-DD"
     }}
     """

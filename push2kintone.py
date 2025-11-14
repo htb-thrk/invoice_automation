@@ -9,9 +9,6 @@ KINTONE_DOMAIN = os.environ["KINTONE_DOMAIN"]
 APP_ID = os.environ["KINTONE_APP_ID"]
 API_TOKEN = os.environ["KINTONE_API_TOKEN"]
 
-MASTER_PATH = "C:/Users/bpr/Documents/invoice_automation/company_master_2025.json"
-
-
 # ==========================
 #  Utility
 # ==========================
@@ -48,13 +45,13 @@ def validate_docai_result(docai_result: Dict[str, Any]) -> None:
     必須フィールドのバリデーション。
     欠損または非数値・無効な日付の場合は例外を送出。
     """
-    required = ["vendor", "amount_excl_tax", "amount_incl_tax", "due_date"]
+    required = ["vendor", "subtotal", "total", "due_date"]
     missing = [k for k in required if not docai_result.get(k)]
     if missing:
         raise ValueError(f"Document AI 結果に必須値が欠けています: {', '.join(missing)}")
 
     # 数値フィールドの型チェック
-    for key in ["amount_excl_tax", "amount_incl_tax"]:
+    for key in ["subtotal", "total"]:
         val = docai_result.get(key)
         try:
             float(val)
@@ -99,23 +96,17 @@ def push_from_docai(docai_result: Dict[str, Any]) -> None:
         raise
 
     # Step 2: vendor照合
-    vendor_in = docai_result["vendor"]
-    master = load_master()
-    hit = find_vendor_exact(vendor_in, master)
+    """KINTONE_DOMAINにクエリを投げて該当のvendor が存在すれば、レコードを追加する。それ以外は追加しない"""
 
-    if not hit:
-        msg = f"未登録の会社です。先に company_master_2025.json / Kintone に登録してください: '{vendor_in}'"
-        print(f"❌ {msg}")
-        raise LookupError(msg)
 
     # Step 3: Kintoneへ追加
     record = {
         "app": APP_ID,
         "record": {
             "vendor": {"value": hit["vendor"]},
-            "ツール名／業務内容": {"value": hit.get("tool_name", "")},
-            "amount_excl_tax": {"value": str(docai_result["amount_excl_tax"])},
-            "amount_incl_tax": {"value": str(docai_result["amount_incl_tax"])},
+            "tool": {"value": hit.get("tool", "")},
+            "subtotal": {"value": str(docai_result["subtotal"])},
+            "total": {"value": str(docai_result["total"])},
             "due_date": {"value": docai_result["due_date"]},
         }
     }

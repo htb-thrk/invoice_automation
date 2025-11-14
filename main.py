@@ -9,8 +9,6 @@ from functions.json_saver import save_json
 
 # === 定数設定 ===
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_MASTER_PATH = os.path.join(PROJECT_ROOT, "company_master_2025.json")
-
 
 # === 共通関数 ===
 def normalize_vendor(name: str) -> str:
