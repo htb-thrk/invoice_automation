@@ -15,22 +15,13 @@ build/
 dist/
 *.egg-info/
 pip-wheel-metadata/
+env.yaml
 
 # Secrets / service account keys
 *.json
 credentials.json
 service-account.json
 key.json
-
-# Terraform (keep .tf files unless you intentionally want to exclude them)
-.terraform/
-*.tfstate
-*.tfstate.*
-override.tf
-override.tf.json
-crash.log
-*.tfvars
-# keep terraform.lock.hcl in repo
 
 # IDE / OS
 .vscode/

@@ -11,13 +11,8 @@
 
 node_modules
 
-.terraform
-_.tfstate
-_.tfstate.backup
-terraform.tfstate
-terraform.tfstate.backup
-
-<!-- \*.tfvars -->
+.env
+env.yml
 
 crash.log
 override.tf

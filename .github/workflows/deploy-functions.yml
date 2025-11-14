@@ -1,0 +1,58 @@
+name: Deploy Cloud Functions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "functions/**"
+      - ".github/workflows/deploy-functions.yml"
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: asia-northeast1
+  FUNCTION_NAME: process-pdf-invoice
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy Cloud Function
+        run: |
+          gcloud functions deploy ${{ env.FUNCTION_NAME }} \
+            --gen2 \
+            --region=${{ env.REGION }} \
+            --runtime=python311 \
+            --source=./functions \
+            --entry-point=on_file_finalized \
+            --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
+            --trigger-event-filters="bucket=${{ secrets.INPUT_BUCKET }}" \
+            --set-env-vars="PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},LOCATION=${{ secrets.DOCAI_LOCATION }},PROCESSOR_ID=${{ secrets.DOCAI_PROCESSOR_ID }},OUTPUT_BUCKET=${{ secrets.OUTPUT_BUCKET }},KINTONE_DOMAIN=${{ secrets.KINTONE_DOMAIN }},KINTONE_APP_ID=${{ secrets.KINTONE_APP_ID }},KINTONE_API_TOKEN=${{ secrets.KINTONE_API_TOKEN }}" \
+            --service-account=docai-function-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+            --timeout=540s \
+            --memory=512MB \
+            --max-instances=10
+
+      - name: Verify deployment
+        run: |
+          gcloud functions describe ${{ env.FUNCTION_NAME }} \
+            --region=${{ env.REGION }} \
+            --gen2 \
+            --format="table(name,state,updateTime)"
