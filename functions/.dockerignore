@@ -1,4 +1,4 @@
-## Ignore files for Docker builds in the web directory
+## Ignore files for Docker builds in the functions directory
 
 # Python
 __pycache__/
@@ -51,12 +51,13 @@ test_*.py
 # Credentials
 credentials/
 *.json
-!package.json
 service-account*.json
 *-key.json
 
 # GitHub
 .github/
 
-# Functions (web �ɂ͕s�v)
-functions/
+# Web app (functions 用)
+static/
+templates/
+web/
