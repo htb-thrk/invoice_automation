@@ -1,7 +1,8 @@
+# ==== Cloud Run / Functions Framework ====
+functions-framework==3.*
+
 # ==== Google Cloud SDK ====
-google-cloud-storage==2.14.0
-functions-framework==3.5.0
+google-cloud-storage==2.*
 
 # ==== HTTP & Utilities ====
-requests==2.31.0
-python-dotenv==1.0.0
+requests==2.*

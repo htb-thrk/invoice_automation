@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from google.cloud import storage
-from modules.document_ai_utils import process_pdf_from_bytes
+from modules.docai_processor import process_pdf
 
 
 def on_file_finalized(cloud_event):
@@ -32,24 +32,17 @@ def on_file_finalized(cloud_event):
         return
     
     try:
-        # 1. GCS から PDF を取得
-        storage_client = storage.Client()
-        input_bucket = storage_client.bucket(bucket_name)
-        blob = input_bucket.blob(file_name)
-        pdf_content = blob.download_as_bytes()
-        
-        print(f"✅ [PDF Processor] Downloaded: {len(pdf_content)} bytes")
-        
-        # 2. Document AI で処理
-        extracted_data = process_pdf_from_bytes(pdf_content)
+        # 1. Document AI で処理（GCSから直接読み込み）
+        extracted_data = process_pdf(bucket_name, file_name)
         
         print(f"✅ [PDF Processor] Extracted: {extracted_data}")
         
-        # 3. OUTPUT_BUCKET に JSON 保存
+        # 2. OUTPUT_BUCKET に JSON 保存
         output_bucket_name = os.environ.get("OUTPUT_BUCKET")
         if not output_bucket_name:
             raise ValueError("OUTPUT_BUCKET environment variable is not set")
         
+        storage_client = storage.Client()
         output_bucket = storage_client.bucket(output_bucket_name)
         json_file_name = file_name.replace(".pdf", ".json")
         json_blob = output_bucket.blob(json_file_name)
