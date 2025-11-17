@@ -1,0 +1,73 @@
+# Python
+
+**pycache**/
+_.py[cod]
+_$py.class
+_.so
+.Python
+_.egg
+\*.egg-info/
+dist/
+build/
+
+# Virtual environments
+
+env/
+venv/
+.venv/
+
+# Environment variables
+
+.env
+.env.\*
+
+# Git
+
+.git/
+.gitignore
+
+# Docker
+
+.dockerignore
+Dockerfile
+
+# IDE
+
+.vscode/
+.idea/
+
+# OS
+
+.DS_Store
+Thumbs.db
+
+# Logs
+
+\*.log
+
+# Test files
+
+tests/
+test\_\*.py
+.pytest_cache/
+
+# Documentation
+
+\*.md
+!README.md
+
+# Credentials
+
+credentials/
+_.json
+service-account_.json
+\*-key.json
+
+# GitHub
+
+.github/
+
+# Other services
+
+../pdf-processor/
+../../web/

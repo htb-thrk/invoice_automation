@@ -95,16 +95,12 @@ def push_from_docai(docai_result: Dict[str, Any]) -> None:
         print(f"❌ 入力データ不正: {e}")
         raise
 
-    # Step 2: vendor照合
-    """KINTONE_DOMAINにクエリを投げて該当のvendor が存在すれば、レコードを追加する。それ以外は追加しない"""
-
-
     # Step 3: Kintoneへ追加
+    ##FIXME: レコードの追加に失敗した場合のリトライやエラーハンドリングを強化する
     record = {
         "app": APP_ID,
         "record": {
             "vendor": {"value": hit["vendor"]},
-            "tool": {"value": hit.get("tool", "")},
             "subtotal": {"value": str(docai_result["subtotal"])},
             "total": {"value": str(docai_result["total"])},
             "due_date": {"value": docai_result["due_date"]},

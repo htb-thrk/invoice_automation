@@ -19,11 +19,9 @@ def extract_fields(doc):
     """Document AIのDocumentオブジェクトから請求書情報を抽出"""
     fields = {
         "vendor": None,
-        "tool": None,
         "subtotal": None,
         "total": None,
         "due_date": None,
-        "invoice_date": None,
     }
 
     entities = list(doc.entities) if getattr(doc, "entities", None) else []

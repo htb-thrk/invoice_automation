@@ -1,9 +1,7 @@
-## Ignore files for Docker builds in the functions directory
-
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.class
 *.so
 .Python
 *.egg
@@ -27,6 +25,7 @@ venv/
 # Docker
 .dockerignore
 Dockerfile
+dockerfile
 
 # IDE
 .vscode/
@@ -57,7 +56,6 @@ service-account*.json
 # GitHub
 .github/
 
-# Web app (functions 用)
-static/
-templates/
-web/
+# Other services
+../kintone-pusher/
+../../web/
