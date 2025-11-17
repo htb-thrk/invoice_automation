@@ -1,0 +1,113 @@
+name: Deploy PDF Processor
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "functions/pdf-processor/**"
+      - "modules/**"
+      - ".github/workflows/deploy-pdf-processor.yml"
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: asia-northeast1
+  FUNCTION_NAME: pdf-processor
+  REGISTRY: asia-northeast1-docker.pkg.dev
+  REPOSITORY: invoice-automation
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Enable required APIs
+        run: |
+          gcloud services enable artifactregistry.googleapis.com --project=${{ env.PROJECT_ID }}
+          gcloud services enable cloudfunctions.googleapis.com --project=${{ env.PROJECT_ID }}
+          gcloud services enable cloudbuild.googleapis.com --project=${{ env.PROJECT_ID }}
+
+      - name: Create Artifact Registry repository
+        run: |
+          if ! gcloud artifacts repositories describe ${{ env.REPOSITORY }} \
+            --location=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} &>/dev/null; then
+            echo "Creating repository..."
+            gcloud artifacts repositories create ${{ env.REPOSITORY }} \
+              --repository-format=docker \
+              --location=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }}
+            sleep 5
+          else
+            echo "Repository already exists"
+          fi
+
+      - name: Configure Docker authentication
+        run: |
+          gcloud auth configure-docker ${{ env.REGISTRY }}
+
+      - name: Prepare build context
+        run: |
+          mkdir -p build-context/modules
+          cp -r modules/* build-context/modules/
+          cp functions/pdf-processor/main.py build-context/
+          cp functions/pdf-processor/Dockerfile build-context/
+          cp functions/pdf-processor/requirements.txt build-context/
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:${{ github.sha }}"
+          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:latest"
+
+          cd build-context
+          docker build -t ${IMAGE_URI} -t ${IMAGE_LATEST} -f Dockerfile .
+          docker push ${IMAGE_URI}
+          docker push ${IMAGE_LATEST}
+
+      - name: Create environment variables file
+        run: |
+          cat > /tmp/env.yaml << 'EOF'
+          GCP_PROJECT_ID: "${{ secrets.GCP_PROJECT_ID }}"
+          DOCAI_LOCATION: "${{ secrets.DOCAI_LOCATION }}"
+          DOCAI_PROCESSOR_ID: "${{ secrets.DOCAI_PROCESSOR_ID }}"
+          OUTPUT_BUCKET: "${{ secrets.OUTPUT_BUCKET }}"
+          EOF
+
+      - name: Deploy Cloud Function
+        run: |
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:${{ github.sha }}"
+
+          gcloud functions deploy ${{ env.FUNCTION_NAME }} \
+            --gen2 \
+            --region=${{ env.REGION }} \
+            --image=${IMAGE_URI} \
+            --entry-point=on_file_finalized \
+            --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
+            --trigger-event-filters="bucket=${{ secrets.INPUT_BUCKET }}" \
+            --env-vars-file=/tmp/env.yaml \
+            --service-account=docai-function-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+            --timeout=540s \
+            --memory=512MB \
+            --max-instances=10
+
+      - name: Verify deployment
+        run: |
+          gcloud functions describe ${{ env.FUNCTION_NAME }} \
+            --region=${{ env.REGION }} \
+            --gen2 \
+            --format="table(name,state,updateTime)"

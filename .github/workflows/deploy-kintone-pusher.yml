@@ -1,0 +1,90 @@
+name: Deploy Kintone Pusher
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "functions/kintone-pusher/**"
+      - "modules/kintone_client.py"
+      - ".github/workflows/deploy-kintone-pusher.yml"
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: asia-northeast1
+  FUNCTION_NAME: kintone-pusher
+  REGISTRY: asia-northeast1-docker.pkg.dev
+  REPOSITORY: invoice-automation
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker authentication
+        run: |
+          gcloud auth configure-docker ${{ env.REGISTRY }}
+
+      - name: Prepare build context
+        run: |
+          mkdir -p build-context/modules
+          cp -r modules/* build-context/modules/
+          cp functions/kintone-pusher/main.py build-context/
+          cp functions/kintone-pusher/Dockerfile build-context/
+          cp functions/kintone-pusher/requirements.txt build-context/
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:${{ github.sha }}"
+          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:latest"
+
+          cd build-context
+          docker build -t ${IMAGE_URI} -t ${IMAGE_LATEST} -f Dockerfile .
+          docker push ${IMAGE_URI}
+          docker push ${IMAGE_LATEST}
+
+      - name: Create environment variables file
+        run: |
+          cat > /tmp/env.yaml << 'EOF'
+          KINTONE_DOMAIN: "${{ secrets.KINTONE_DOMAIN }}"
+          KINTONE_APP_ID: "${{ secrets.KINTONE_APP_ID }}"
+          KINTONE_API_TOKEN: "${{ secrets.KINTONE_API_TOKEN }}"
+          EOF
+
+      - name: Deploy Cloud Function
+        run: |
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:${{ github.sha }}"
+
+          gcloud functions deploy ${{ env.FUNCTION_NAME }} \
+            --gen2 \
+            --region=${{ env.REGION }} \
+            --image=${IMAGE_URI} \
+            --entry-point=on_json_finalized \
+            --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
+            --trigger-event-filters="bucket=${{ secrets.OUTPUT_BUCKET }}" \
+            --env-vars-file=/tmp/env.yaml \
+            --timeout=60s \
+            --memory=256MB \
+            --max-instances=10
+
+      - name: Verify deployment
+        run: |
+          gcloud functions describe ${{ env.FUNCTION_NAME }} \
+            --region=${{ env.REGION }} \
+            --gen2 \
+            --format="table(name,state,updateTime)"

@@ -1,6 +1,6 @@
 # ==== Cloud Run Web App用 ====
 google-cloud-storage
-flask==3.0.0
-gunicorn==21.2.0
+flask
+gunicorn
 python-dotenv
-werkzeug==3.0.1
+werkzeug

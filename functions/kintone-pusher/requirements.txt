@@ -1,0 +1,7 @@
+# ==== Google Cloud SDK ====
+google-cloud-storage>=2.18.2,<3.0.0
+functions-framework>=3.8.2,<4.0.0
+
+# ==== HTTP & Utilities ====
+requests>=2.32.3,<3.0.0
+python-dotenv>=1.0.1,<2.0.0

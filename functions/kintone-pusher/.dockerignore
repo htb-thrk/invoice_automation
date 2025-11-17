@@ -1,62 +1,73 @@
-## Ignore files for Docker builds in the web directory
-
 # Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
+
+**pycache**/
+_.py[cod]
+_$py.class
+_.so
 .Python
-*.egg
-*.egg-info/
+_.egg
+\*.egg-info/
 dist/
 build/
 
 # Virtual environments
+
 env/
 venv/
 .venv/
 
 # Environment variables
+
 .env
-.env.*
+.env.\*
 
 # Git
+
 .git/
 .gitignore
 
 # Docker
+
 .dockerignore
 Dockerfile
 
 # IDE
+
 .vscode/
 .idea/
 
 # OS
+
 .DS_Store
 Thumbs.db
 
 # Logs
-*.log
+
+\*.log
 
 # Test files
+
 tests/
-test_*.py
+test\_\*.py
 .pytest_cache/
 
 # Documentation
-*.md
+
+\*.md
 !README.md
 
 # Credentials
+
 credentials/
-*.json
-!package.json
-service-account*.json
-*-key.json
+_.json
+service-account_.json
+\*-key.json
 
 # GitHub
+
 .github/
 
-# Functions (web �ɂ͕s�v)
-functions/
+# Other services
+
+../pdf-processor/
+../../web/

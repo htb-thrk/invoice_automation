@@ -1,9 +1,7 @@
-## Ignore files for Docker builds in the web directory
-
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.class
 *.so
 .Python
 *.egg
@@ -27,6 +25,7 @@ venv/
 # Docker
 .dockerignore
 Dockerfile
+dockerfile
 
 # IDE
 .vscode/
@@ -51,12 +50,12 @@ test_*.py
 # Credentials
 credentials/
 *.json
-!package.json
 service-account*.json
 *-key.json
 
 # GitHub
 .github/
 
-# Functions (web �ɂ͕s�v)
-functions/
+# Other services
+../kintone-pusher/
+../../web/
