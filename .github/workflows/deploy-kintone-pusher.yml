@@ -48,7 +48,7 @@ jobs:
 
           echo "🔨 Building Docker image..."
           docker build \
-            -f docker/kintone-pusher.Dockerfile \
+            -f functions/kintone-pusher/Dockerfile \
             -t ${IMAGE_URI} \
             -t ${IMAGE_LATEST} \
             .

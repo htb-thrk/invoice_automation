@@ -44,21 +44,6 @@ class KintoneAPIError(Exception):
 def normalize_vendor(name: str) -> str:
     """
     ベンダー名を正規化（株式会社の有無を無視、空白除去）
-    
-    Args:
-        name: ベンダー名
-        
-    Returns:
-        正規化されたベンダー名
-        
-    Raises:
-        ValueError: 名前が空の場合
-        
-    Examples:
-        >>> normalize_vendor("株式会社 テスト商事")
-        'テスト商事'
-        >>> normalize_vendor("（株）テスト")
-        'テスト'
     """
     if not name:
         raise ValueError("ベンダー名が空です")
@@ -80,24 +65,6 @@ def normalize_vendor(name: str) -> str:
 def validate_amount(value: Any, field_name: str = "金額") -> Optional[float]:
     """
     金額を検証してfloatに変換
-    
-    Args:
-        value: 金額の値
-        field_name: フィールド名（エラーメッセージ用）
-        
-    Returns:
-        検証済みのfloat値、またはNone
-        
-    Raises:
-        ValueError: 負の値、または数値に変換できない場合
-        
-    Examples:
-        >>> validate_amount(1000)
-        1000.0
-        >>> validate_amount("1000")
-        1000.0
-        >>> validate_amount(None)
-        None
     """
     if value is None or value == "":
         return None
@@ -120,21 +87,6 @@ def validate_amount(value: Any, field_name: str = "金額") -> Optional[float]:
 def validate_date(date_str: str) -> str:
     """
     日付形式を検証（YYYY-MM-DD）
-    
-    Args:
-        date_str: 日付文字列
-        
-    Returns:
-        検証済みの日付文字列
-        
-    Raises:
-        ValueError: 日付形式が不正な場合
-        
-    Examples:
-        >>> validate_date("2025-12-31")
-        '2025-12-31'
-        >>> validate_date("")
-        ''
     """
     if not date_str:
         return ""
