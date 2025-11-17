@@ -7,12 +7,13 @@ on:
     paths:
       - "functions/kintone-pusher/**"
       - "modules/kintone_client.py"
+      - "docker/kintone-pusher.Dockerfile"
       - ".github/workflows/deploy-kintone-pusher.yml"
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: asia-northeast1
-  FUNCTION_NAME: kintone-pusher
+  SERVICE_NAME: kintone-pusher
   REGISTRY: asia-northeast1-docker.pkg.dev
   REPOSITORY: invoice-automation
 
@@ -30,61 +31,88 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: "projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "github-actions-deployer@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker authentication
+      - name: Configure Docker for Artifact Registry
         run: |
           gcloud auth configure-docker ${{ env.REGISTRY }}
 
-      - name: Prepare build context
-        run: |
-          mkdir -p build-context/modules
-          cp -r modules/* build-context/modules/
-          cp functions/kintone-pusher/main.py build-context/
-          cp functions/kintone-pusher/Dockerfile build-context/
-          cp functions/kintone-pusher/requirements.txt build-context/
-
       - name: Build and push Docker image
         run: |
-          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:${{ github.sha }}"
-          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:latest"
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest"
 
-          cd build-context
-          docker build -t ${IMAGE_URI} -t ${IMAGE_LATEST} -f Dockerfile .
+          docker build \
+            -f docker/kintone-pusher.Dockerfile \
+            -t ${IMAGE_URI} \
+            -t ${IMAGE_LATEST} \
+            .
+
           docker push ${IMAGE_URI}
           docker push ${IMAGE_LATEST}
 
-      - name: Create environment variables file
-        run: |
-          cat > /tmp/env.yaml << 'EOF'
-          KINTONE_DOMAIN: "${{ secrets.KINTONE_DOMAIN }}"
-          KINTONE_APP_ID: "${{ secrets.KINTONE_APP_ID }}"
-          KINTONE_API_TOKEN: "${{ secrets.KINTONE_API_TOKEN }}"
-          EOF
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
 
-      - name: Deploy Cloud Function
+      - name: Deploy to Cloud Run
         run: |
-          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:${{ github.sha }}"
-
-          gcloud functions deploy ${{ env.FUNCTION_NAME }} \
-            --gen2 \
-            --region=${{ env.REGION }} \
-            --image=${IMAGE_URI} \
-            --entry-point=on_json_finalized \
-            --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
-            --trigger-event-filters="bucket=${{ secrets.OUTPUT_BUCKET }}" \
-            --env-vars-file=/tmp/env.yaml \
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image ${{ env.IMAGE_URI }} \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --no-allow-unauthenticated \
+            --set-env-vars "KINTONE_DOMAIN=${{ secrets.KINTONE_DOMAIN }},KINTONE_APP_ID=${{ secrets.KINTONE_APP_ID }},KINTONE_API_TOKEN=${{ secrets.KINTONE_API_TOKEN }}" \
             --timeout=60s \
-            --memory=256MB \
-            --max-instances=10
+            --memory=256Mi \
+            --min-instances=0 \
+            --max-instances=10 \
+            --cpu=1 \
+            --port=8080
+
+      - name: Set up Eventarc trigger for Cloud Storage
+        run: |
+          TRIGGER_NAME="${{ env.SERVICE_NAME }}-trigger"
+          SERVICE_ACCOUNT="eventarc-trigger-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          # API を有効化
+          gcloud services enable eventarc.googleapis.com --project=${{ env.PROJECT_ID }}
+
+          # トリガーの存在確認と作成/更新
+          if gcloud eventarc triggers describe ${TRIGGER_NAME} \
+            --location=${{ env.REGION }} 2>/dev/null; then
+            echo "✅ Trigger ${TRIGGER_NAME} already exists, updating..."
+            
+            gcloud eventarc triggers update ${TRIGGER_NAME} \
+              --location=${{ env.REGION }} \
+              --destination-run-service=${{ env.SERVICE_NAME }} \
+              --destination-run-region=${{ env.REGION }} \
+              --event-filters="type=google.cloud.storage.object.v1.finalized" \
+              --event-filters="bucket=${{ secrets.OUTPUT_BUCKET }}" \
+              --service-account=${SERVICE_ACCOUNT}
+          else
+            echo "🆕 Creating trigger ${TRIGGER_NAME}..."
+            
+            gcloud eventarc triggers create ${TRIGGER_NAME} \
+              --location=${{ env.REGION }} \
+              --destination-run-service=${{ env.SERVICE_NAME }} \
+              --destination-run-region=${{ env.REGION }} \
+              --event-filters="type=google.cloud.storage.object.v1.finalized" \
+              --event-filters="bucket=${{ secrets.OUTPUT_BUCKET }}" \
+              --service-account=${SERVICE_ACCOUNT}
+          fi
 
       - name: Verify deployment
         run: |
-          gcloud functions describe ${{ env.FUNCTION_NAME }} \
+          echo "📊 Deployment Status:"
+          gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
-            --gen2 \
-            --format="table(name,state,updateTime)"
+            --format="table(status.url,status.conditions[0].type,status.conditions[0].status)"
+
+          echo ""
+          echo "🔗 Service URL:"
+          gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)"
