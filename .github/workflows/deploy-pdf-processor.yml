@@ -1,6 +1,16 @@
 name: Deploy PDF Processor
 
 on:
+  # プルリクエスト作成・更新時にビルド＆テスト
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "functions/pdf-processor/**"
+      - "modules/**"
+      - ".github/workflows/deploy-pdf-processor.yml"
+
+  # main ブランチへのプッシュ時にデプロイ
   push:
     branches:
       - main
@@ -12,12 +22,112 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: asia-northeast1
-  FUNCTION_NAME: pdf-processor
+  SERVICE_NAME: pdf-processor
   REGISTRY: asia-northeast1-docker.pkg.dev
   REPOSITORY: invoice-automation
 
 jobs:
+  # ========================================
+  # ビルド＆テストジョブ（PR時も実行）
+  # ========================================
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          cd functions/pdf-processor
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run unit tests
+        run: |
+          cd functions/pdf-processor
+          if [ -d "tests" ]; then
+            pytest tests/ -v --cov=. --cov-report=term-missing
+          else
+            echo "⏭️ No tests found, skipping..."
+          fi
+
+      - name: Verify directory structure
+        run: |
+          echo "📁 Verifying directory structure..."
+          ls -la functions/pdf-processor/Dockerfile || echo "❌ Dockerfile not found"
+          ls -la modules/docai_processor.py || echo "❌ docai_processor.py not found"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "github-actions-deployer@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.REGISTRY }}
+
+      - name: Build Docker image
+        run: |
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest"
+
+          echo "🔨 Building Docker image..."
+          docker build \
+            -f functions/pdf-processor/Dockerfile \
+            -t ${IMAGE_URI} \
+            -t ${IMAGE_LATEST} \
+            .
+
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
+          echo "IMAGE_LATEST=${IMAGE_LATEST}" >> $GITHUB_ENV
+
+      - name: Push Docker image (only on push to main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "📤 Pushing Docker image..."
+          docker push ${{ env.IMAGE_URI }}
+          docker push ${{ env.IMAGE_LATEST }}
+
+      - name: Comment build status on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### 🔨 Build Successful for PDF Processor
+
+            ✅ Docker image built successfully
+            - Image: \`${{ env.IMAGE_URI }}\`
+            - Commit: \`${{ github.sha }}\`
+
+            **Note:** Image was not pushed (PR only builds, does not deploy)`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+  # ========================================
+  # デプロイジョブ（main へのプッシュ時のみ）
+  # ========================================
   deploy:
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,84 +140,74 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: "projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "github-actions-deployer@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Enable required APIs
+      - name: Deploy to Cloud Run
         run: |
-          gcloud services enable artifactregistry.googleapis.com --project=${{ env.PROJECT_ID }}
-          gcloud services enable cloudfunctions.googleapis.com --project=${{ env.PROJECT_ID }}
-          gcloud services enable cloudbuild.googleapis.com --project=${{ env.PROJECT_ID }}
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
 
-      - name: Create Artifact Registry repository
-        run: |
-          if ! gcloud artifacts repositories describe ${{ env.REPOSITORY }} \
-            --location=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} &>/dev/null; then
-            echo "Creating repository..."
-            gcloud artifacts repositories create ${{ env.REPOSITORY }} \
-              --repository-format=docker \
-              --location=${{ env.REGION }} \
-              --project=${{ env.PROJECT_ID }}
-            sleep 5
-          else
-            echo "Repository already exists"
-          fi
-
-      - name: Configure Docker authentication
-        run: |
-          gcloud auth configure-docker ${{ env.REGISTRY }}
-
-      - name: Prepare build context
-        run: |
-          mkdir -p build-context/modules
-          cp -r modules/* build-context/modules/
-          cp functions/pdf-processor/main.py build-context/
-          cp functions/pdf-processor/Dockerfile build-context/
-          cp functions/pdf-processor/requirements.txt build-context/
-
-      - name: Build and push Docker image
-        run: |
-          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:${{ github.sha }}"
-          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:latest"
-
-          cd build-context
-          docker build -t ${IMAGE_URI} -t ${IMAGE_LATEST} -f Dockerfile .
-          docker push ${IMAGE_URI}
-          docker push ${IMAGE_LATEST}
-
-      - name: Create environment variables file
-        run: |
-          cat > /tmp/env.yaml << 'EOF'
-          GCP_PROJECT_ID: "${{ secrets.GCP_PROJECT_ID }}"
-          DOCAI_LOCATION: "${{ secrets.DOCAI_LOCATION }}"
-          DOCAI_PROCESSOR_ID: "${{ secrets.DOCAI_PROCESSOR_ID }}"
-          OUTPUT_BUCKET: "${{ secrets.OUTPUT_BUCKET }}"
-          EOF
-
-      - name: Deploy Cloud Function
-        run: |
-          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FUNCTION_NAME }}:${{ github.sha }}"
-
-          gcloud functions deploy ${{ env.FUNCTION_NAME }} \
-            --gen2 \
-            --region=${{ env.REGION }} \
-            --image=${IMAGE_URI} \
-            --entry-point=on_file_finalized \
-            --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
-            --trigger-event-filters="bucket=${{ secrets.INPUT_BUCKET }}" \
-            --env-vars-file=/tmp/env.yaml \
-            --service-account=docai-function-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+          echo "🚀 Deploying to Cloud Run..."
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image ${IMAGE_URI} \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --no-allow-unauthenticated \
+            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},DOCAI_LOCATION=${{ secrets.DOCAI_LOCATION }},DOCAI_PROCESSOR_ID=${{ secrets.DOCAI_PROCESSOR_ID }},OUTPUT_BUCKET=${{ secrets.OUTPUT_BUCKET }}" \
+            --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
             --timeout=540s \
-            --memory=512MB \
-            --max-instances=10
+            --memory=512Mi \
+            --min-instances=0 \
+            --max-instances=10 \
+            --cpu=1 \
+            --port=8080
+
+      - name: Set up Eventarc trigger for Cloud Storage
+        run: |
+          TRIGGER_NAME="${{ env.SERVICE_NAME }}-trigger"
+          # ✅ GitHub Secrets から GCP_SERVICE_ACCOUNT を取得
+          SERVICE_ACCOUNT="${{ secrets.GCP_SERVICE_ACCOUNT }}"
+
+          echo "📡 Setting up Eventarc trigger..."
+          echo "Trigger Name: ${TRIGGER_NAME}"
+          echo "Service Account: ${SERVICE_ACCOUNT}"
+          echo "Bucket: ${{ secrets.INPUT_BUCKET }}"
+
+          if gcloud eventarc triggers describe ${TRIGGER_NAME} \
+            --location=${{ env.REGION }} 2>/dev/null; then
+            echo "✅ Trigger ${TRIGGER_NAME} already exists, updating..."
+            
+            gcloud eventarc triggers update ${TRIGGER_NAME} \
+              --location=${{ env.REGION }} \
+              --destination-run-service=${{ env.SERVICE_NAME }} \
+              --destination-run-region=${{ env.REGION }} \
+              --event-filters="type=google.cloud.storage.object.v1.finalized" \
+              --event-filters="bucket=${{ secrets.INPUT_BUCKET }}" \
+              --service-account=${SERVICE_ACCOUNT}
+          else
+            echo "🆕 Creating trigger ${TRIGGER_NAME}..."
+            
+            gcloud eventarc triggers create ${TRIGGER_NAME} \
+              --location=${{ env.REGION }} \
+              --destination-run-service=${{ env.SERVICE_NAME }} \
+              --destination-run-region=${{ env.REGION }} \
+              --event-filters="type=google.cloud.storage.object.v1.finalized" \
+              --event-filters="bucket=${{ secrets.INPUT_BUCKET }}" \
+              --service-account=${SERVICE_ACCOUNT}
+          fi
 
       - name: Verify deployment
         run: |
-          gcloud functions describe ${{ env.FUNCTION_NAME }} \
+          echo "📊 Deployment Status:"
+          gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
-            --gen2 \
-            --format="table(name,state,updateTime)"
+            --format="table(status.url,status.conditions[0].type,status.conditions[0].status)"
+
+          echo ""
+          echo "📡 Eventarc Trigger:"
+          gcloud eventarc triggers describe ${{ env.SERVICE_NAME }}-trigger \
+            --location=${{ env.REGION }} \
+            --format="table(name,destination.cloudRun.service,eventFilters,serviceAccount)"
