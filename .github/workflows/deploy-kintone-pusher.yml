@@ -1,6 +1,16 @@
 name: Deploy Kintone Pusher
 
 on:
+  # プルリクエスト作成・更新時にビルド＆テスト
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "functions/kintone-pusher/**"
+      - "modules/kintone_client.py"
+      - ".github/workflows/deploy-kintone-pusher.yml"
+
+  # main ブランチへのプッシュ時にデプロイ
   push:
     branches:
       - main
@@ -17,7 +27,117 @@ env:
   REPOSITORY: invoice-automation
 
 jobs:
+  # ========================================
+  # ビルド＆テストジョブ（PR時も実行）
+  # ========================================
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write # PR にコメントを投稿する権限
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          cd functions/kintone-pusher
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run unit tests
+        run: |
+          cd functions/kintone-pusher
+          # テストがない場合はスキップ
+          if [ -d "tests" ]; then
+            pytest tests/ -v --cov=. --cov-report=term-missing
+          else
+            echo "⏭️ No tests found, skipping..."
+          fi
+
+      - name: Verify directory structure
+        run: |
+          echo "📁 Verifying directory structure..."
+          echo "Current directory: $(pwd)"
+          echo ""
+          echo "Checking Dockerfile:"
+          ls -la functions/kintone-pusher/Dockerfile || echo "❌ Dockerfile not found"
+          echo ""
+          echo "Checking modules:"
+          ls -la modules/kintone_client.py || echo "❌ kintone_client.py not found"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "github-actions-deployer@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.REGISTRY }}
+
+      - name: Build Docker image
+        run: |
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest"
+
+          echo "🔨 Building Docker image..."
+          echo "Dockerfile: functions/kintone-pusher/Dockerfile"
+          echo "Context: $(pwd)"
+          echo "Image URI: ${IMAGE_URI}"
+
+          docker build \
+            -f functions/kintone-pusher/Dockerfile \
+            -t ${IMAGE_URI} \
+            -t ${IMAGE_LATEST} \
+            .
+
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
+          echo "IMAGE_LATEST=${IMAGE_LATEST}" >> $GITHUB_ENV
+
+      - name: Push Docker image (only on push to main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "📤 Pushing Docker image..."
+          docker push ${{ env.IMAGE_URI }}
+          docker push ${{ env.IMAGE_LATEST }}
+
+      - name: Comment build status on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### 🔨 Build Successful for Kintone Pusher
+
+            ✅ Docker image built successfully
+            - Image: \`${{ env.IMAGE_URI }}\`
+            - Commit: \`${{ github.sha }}\`
+
+            **Note:** Image was not pushed (PR only builds, does not deploy)`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+  # ========================================
+  # デプロイジョブ（main へのプッシュ時のみ）
+  # ========================================
   deploy:
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,37 +156,18 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for Artifact Registry
-        run: |
-          gcloud auth configure-docker ${{ env.REGISTRY }}
-
-      - name: Build and push Docker image
-        run: |
-          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
-          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest"
-
-          echo "🔨 Building Docker image..."
-          docker build \
-            -f functions/kintone-pusher/Dockerfile \
-            -t ${IMAGE_URI} \
-            -t ${IMAGE_LATEST} \
-            .
-
-          echo "📤 Pushing Docker image..."
-          docker push ${IMAGE_URI}
-          docker push ${IMAGE_LATEST}
-
-          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
-
       - name: Deploy to Cloud Run
         run: |
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+
           echo "🚀 Deploying to Cloud Run..."
           gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image ${{ env.IMAGE_URI }} \
+            --image ${IMAGE_URI} \
             --region ${{ env.REGION }} \
             --platform managed \
             --no-allow-unauthenticated \
             --set-env-vars "KINTONE_DOMAIN=${{ secrets.KINTONE_DOMAIN }},KINTONE_APP_ID=${{ secrets.KINTONE_APP_ID }},KINTONE_API_TOKEN=${{ secrets.KINTONE_API_TOKEN }}" \
+            --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
             --timeout=60s \
             --memory=256Mi \
             --min-instances=0 \
@@ -77,7 +178,13 @@ jobs:
       - name: Set up Eventarc trigger for Cloud Storage
         run: |
           TRIGGER_NAME="${{ env.SERVICE_NAME }}-trigger"
-          SERVICE_ACCOUNT="eventarc-trigger-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+          # ✅ GitHub Secrets から GCP_SERVICE_ACCOUNT を取得
+          SERVICE_ACCOUNT="${{ secrets.GCP_SERVICE_ACCOUNT }}"
+
+          echo "📡 Setting up Eventarc trigger..."
+          echo "Trigger Name: ${TRIGGER_NAME}"
+          echo "Service Account: ${SERVICE_ACCOUNT}"
+          echo "Bucket: ${{ secrets.OUTPUT_BUCKET }}"
 
           if gcloud eventarc triggers describe ${TRIGGER_NAME} \
             --location=${{ env.REGION }} 2>/dev/null; then
@@ -114,3 +221,9 @@ jobs:
           gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --format="value(status.url)"
+
+          echo ""
+          echo "📡 Eventarc Trigger:"
+          gcloud eventarc triggers describe ${{ env.SERVICE_NAME }}-trigger \
+            --location=${{ env.REGION }} \
+            --format="table(name,destination.cloudRun.service,eventFilters,serviceAccount)"
