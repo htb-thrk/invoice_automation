@@ -1,111 +1,168 @@
-import json
-import re
-import requests
+"""
+Kintone Pusher Cloud Function
+OUTPUT_BUCKET に JSON がアップロードされたら実行
+JSON を読み込んで kintone に登録（エラーハンドリング強化版）
+"""
 import os
-from typing import Any, Dict
+import sys
+import json
+import logging
+from pathlib import Path
 
-# --- 設定 ---
-KINTONE_DOMAIN = os.environ["KINTONE_DOMAIN"]
-APP_ID = os.environ["KINTONE_APP_ID"]
-API_TOKEN = os.environ["KINTONE_API_TOKEN"]
+# modules をパスに追加
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-# ==========================
-#  Utility
-# ==========================
+from google.cloud import storage
+from modules.kintone_client import (
+    KintoneClient,
+    KintoneValidationError,
+    KintoneAPIError
+)
 
-def normalize_vendor(name: str) -> str:
-    """'株式会社' の有無を無視し、空白を除去"""
-    if not name:
-        return ""
-    name = re.sub(r"株式会社|（株）|㈱", "", name)
-    name = re.sub(r"\s+", "", name)
-    return name
-
-
-def load_master() -> list:
-    with open(MASTER_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+# ロガー設定
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 
-def find_vendor_exact(vendor_name: str, master: list) -> dict | None:
-    """vendor を正規化して完全一致で照合"""
-    normalized = normalize_vendor(vendor_name)
-    for rec in master:
-        if normalize_vendor(rec["vendor"]) == normalized:
-            return rec
-    return None
-
-
-# ==========================
-#  Validation
-# ==========================
-
-def validate_docai_result(docai_result: Dict[str, Any]) -> None:
+def on_json_finalized(cloud_event):
     """
-    必須フィールドのバリデーション。
-    欠損または非数値・無効な日付の場合は例外を送出。
+    Cloud Function エントリーポイント
+    OUTPUT_BUCKET への JSON アップロードをトリガー
+    
+    Args:
+        cloud_event: CloudEvent オブジェクト
     """
-    required = ["vendor", "subtotal", "total", "due_date"]
-    missing = [k for k in required if not docai_result.get(k)]
-    if missing:
-        raise ValueError(f"Document AI 結果に必須値が欠けています: {', '.join(missing)}")
-
-    # 数値フィールドの型チェック
-    for key in ["subtotal", "total"]:
-        val = docai_result.get(key)
-        try:
-            float(val)
-        except (TypeError, ValueError):
-            raise ValueError(f"{key} の値が数値ではありません: {val}")
-
-    # 日付形式の簡易チェック（YYYY-MM-DD）
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", docai_result.get("due_date", "")):
-        raise ValueError(f"due_date の形式が不正です: {docai_result.get('due_date')}")
-
-
-# ==========================
-#  Kintone操作
-# ==========================
-
-def add_kintone_record(record: Dict[str, Any]) -> None:
-    """Kintoneにレコードを追加"""
-    url = f"{KINTONE_DOMAIN}/k/v1/record.json"
-    headers = {
-        "X-Cybozu-API-Token": API_TOKEN,
-        "Content-Type": "application/json"
-    }
-
-    resp = requests.post(url, headers=headers, json=record)
-    if resp.status_code == 200:
-        print(f"✅ Kintone追加成功: {record['record']['vendor']['value']}")
-    else:
-        raise RuntimeError(f"❌ Kintone追加失敗: {resp.status_code} {resp.text}")
-
-
-# ==========================
-#  Main Function
-# ==========================
-
-def push_from_docai(docai_result: Dict[str, Any]) -> None:
-    """Document AIの抽出結果をKintoneに追加"""
-    # Step 1: バリデーション
+    data = cloud_event.data
+    bucket_name = data["bucket"]
+    file_name = data["name"]
+    
+    logger.info(f"📝 [Kintone Pusher] Processing: gs://{bucket_name}/{file_name}")
+    
+    # JSON ファイルのみ処理
+    if not file_name.lower().endswith(".json"):
+        logger.info(f"⏭️ [Kintone Pusher] Skipped: {file_name} (not JSON)")
+        return
+    
     try:
-        validate_docai_result(docai_result)
-    except ValueError as e:
-        print(f"❌ 入力データ不正: {e}")
+        # 1. GCS から JSON を取得
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(file_name)
+        
+        logger.debug(f"GCS からファイルダウンロード: {file_name}")
+        json_text = blob.download_as_text()
+        json_data = json.loads(json_text)
+        
+        logger.info(f"✅ [Kintone Pusher] Loaded JSON: {json_data}")
+        
+        # 2. kintone クライアント初期化（環境変数から自動取得）
+        client = KintoneClient()
+        
+        # 3. kintone に登録（エラーハンドリング付き）
+        try:
+            record_id = client.create_record(json_data)
+            logger.info(
+                f"✅ [Kintone Pusher] Successfully created record: ID={record_id}"
+            )
+            logger.info(f"🎉 [Kintone Pusher] Successfully processed: {file_name}")
+            
+        except KintoneValidationError as e:
+            # バリデーションエラー: データ不正（リトライ不可）
+            logger.error(f"⚠️ [Kintone Pusher] Validation Error: {str(e)}")
+            logger.error(f"   File: {file_name}")
+            logger.error(f"   Data: {json_data}")
+            
+            # エラーファイルとして保存（オプション）
+            error_bucket_name = os.environ.get("ERROR_BUCKET")
+            if error_bucket_name:
+                save_error_file(
+                    storage_client,
+                    error_bucket_name,
+                    file_name,
+                    json_data,
+                    str(e)
+                )
+            
+            # バリデーションエラーは再送不可なので例外を再スローしない
+            return
+            
+        except KintoneAPIError as e:
+            # API エラー: リトライ可能な場合がある
+            logger.error(f"❌ [Kintone Pusher] Kintone API Error: {str(e)}")
+            logger.error(f"   File: {file_name}")
+            
+            # API エラーは再スローして Cloud Functions のリトライ機構を使う
+            raise
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ [Kintone Pusher] Invalid JSON: {str(e)}")
+        logger.error(f"   File: {file_name}")
+        # JSON パースエラーは再送不可
+        return
+        
+    except Exception as e:
+        logger.error(
+            f"❌ [Kintone Pusher] Unexpected error: {str(e)}",
+            exc_info=True
+        )
+        # 予期しないエラーは再スロー
         raise
 
-    # Step 3: Kintoneへ追加
-    ##FIXME: レコードの追加に失敗した場合のリトライやエラーハンドリングを強化する
-    record = {
-        "app": APP_ID,
-        "record": {
-            "vendor": {"value": hit["vendor"]},
-            "subtotal": {"value": str(docai_result["subtotal"])},
-            "total": {"value": str(docai_result["total"])},
-            "due_date": {"value": docai_result["due_date"]},
-        }
-    }
 
-    add_kintone_record(record)
-    print(f"✅ レコード追加完了: {hit['vendor']}")
+def save_error_file(
+    storage_client: storage.Client,
+    error_bucket_name: str,
+    original_file_name: str,
+    json_data: dict,
+    error_message: str
+) -> None:
+    """
+    エラーファイルを保存
+    
+    Args:
+        storage_client: GCS クライアント
+        error_bucket_name: エラーバケット名
+        original_file_name: 元のファイル名
+        json_data: JSONデータ
+        error_message: エラーメッセージ
+    """
+    try:
+        error_bucket = storage_client.bucket(error_bucket_name)
+        error_file_name = f"validation_errors/{original_file_name}"
+        error_blob = error_bucket.blob(error_file_name)
+        
+        error_data = {
+            "error": error_message,
+            "original_data": json_data,
+            "source_file": original_file_name
+        }
+        
+        error_blob.upload_from_string(
+            json.dumps(error_data, ensure_ascii=False, indent=2),
+            content_type="application/json"
+        )
+        
+        logger.info(
+            f"💾 [Kintone Pusher] Saved error details: "
+            f"gs://{error_bucket_name}/{error_file_name}"
+        )
+        
+    except Exception as e:
+        logger.error(f"⚠️ エラーファイル保存失敗: {str(e)}")
+
+
+if __name__ == "__main__":
+    """ローカルテスト用"""
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    class DummyEvent:
+        data = {
+            "bucket": os.environ.get("OUTPUT_BUCKET"),
+            "name": "test_invoice.json"
+        }
+    
+    on_json_finalized(DummyEvent())
