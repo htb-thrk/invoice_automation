@@ -18,5 +18,5 @@ COPY functions/pdf-processor/main.py /app/main.py
 # ✅ Cloud Run 用の環境変数
 ENV PORT=8080
 
-# ✅ Functions Framework を起動
+# ✅ Functions Framework を起動（--port=$PORT を使用）
 CMD ["functions-framework", "--target=on_file_finalized", "--signature-type=cloudevent", "--port=8080"]
