@@ -46,12 +46,14 @@ jobs:
           IMAGE_URI="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
           IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest"
 
+          echo "🔨 Building Docker image..."
           docker build \
             -f docker/kintone-pusher.Dockerfile \
             -t ${IMAGE_URI} \
             -t ${IMAGE_LATEST} \
             .
 
+          echo "📤 Pushing Docker image..."
           docker push ${IMAGE_URI}
           docker push ${IMAGE_LATEST}
 
@@ -59,6 +61,7 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
+          echo "🚀 Deploying to Cloud Run..."
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image ${{ env.IMAGE_URI }} \
             --region ${{ env.REGION }} \
@@ -77,7 +80,8 @@ jobs:
           TRIGGER_NAME="${{ env.SERVICE_NAME }}-trigger"
           SERVICE_ACCOUNT="eventarc-trigger-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
 
-          # API を有効化
+          # API 有効化
+          echo "🔧 Enabling Eventarc API..."
           gcloud services enable eventarc.googleapis.com --project=${{ env.PROJECT_ID }}
 
           # トリガーの存在確認と作成/更新
