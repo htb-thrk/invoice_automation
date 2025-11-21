@@ -155,7 +155,7 @@ def save_error_file(
 
 
 if __name__ == "__main__":
-    """ローカルテスト用"""
+    """local test用"""
     from dotenv import load_dotenv
     load_dotenv()
     
