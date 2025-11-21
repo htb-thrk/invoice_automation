@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify
 from google.cloud import storage
 from werkzeug.utils import secure_filename
 
-app = Flask(__name__, static_folder='statics', static_url_path='')
+app = Flask(__name__, static_folder='static', static_url_path='')
 
 # === 環境変数 ===
 PROJECT_ID = os.environ.get('GOOGLE_CLOUD_PROJECT_ID', 'htbwebsite-chatbot-462005')
