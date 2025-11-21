@@ -1,11 +1,12 @@
 # ==== Google Cloud SDK ====
 google-cloud-storage>=2.18.2,<3.0.0
 google-cloud-documentai>=2.29.0,<3.0.0
+google-cloud-aiplatform>=1.38.0,<2.0.0
 functions-framework>=3.8.2,<4.0.0
 
 # ==== Utilities ====
 python-dotenv>=1.0.1,<2.0.0
 requests>=2.28.0,<3.0.0
 
-# ==== docai_processor で使用 ===#
+# ==== docai_processor で使用 ====
 google-api-core>=2.11.0,<3.0.0

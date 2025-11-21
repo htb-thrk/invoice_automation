@@ -1,22 +1,40 @@
-# modules/document_ai_utils.py
+# modules/docai_processor.py
 import os
 import re
+import json
 import tempfile
+import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from google.cloud import storage, documentai
 from google.api_core.client_options import ClientOptions
+from vertexai.preview.generative_models import GenerativeModel
+import vertexai
+
+# ロガー設定
+logger = logging.getLogger(__name__)
 
 # ==== 共通：数値変換 ====
 def _to_decimal(x):
+    """数値文字列をDecimalに安全変換"""
+    if x is None:
+        return None
     try:
-        return Decimal(str(x).replace(",", "").strip())
-    except Exception:
+        s = str(x)
+        s = re.sub(r"[^\d,\.]", "", s)
+        if not s:
+            return None
+        s = s.replace(",", "")
+        return Decimal(s)
+    except (InvalidOperation, ValueError):
         return None
 
-# ==== Document AIからデータ抽出 ====
-def extract_fields(doc):
-    """Document AIのDocumentオブジェクトから請求書情報を抽出"""
+
+# ==== Geminiを使用して4項目を抽出 ====
+def extract_with_gemini(text: str, project_id: str) -> dict:
+    """
+    Gemini 2.0 Flashを使用して vendor / subtotal / total / due_date を抽出
+    """
     fields = {
         "vendor": None,
         "subtotal": None,
@@ -24,84 +42,156 @@ def extract_fields(doc):
         "due_date": None,
     }
 
-    entities = list(doc.entities) if getattr(doc, "entities", None) else []
-    
-    # デバッグ: 抽出されたエンティティを表示
-    print(f"📊 Document AI が抽出したエンティティ数: {len(entities)}")
-    for e in entities[:10]:  # 最初の10個を表示
-        print(f"  - type: {e.type_}, text: {e.mention_text or 'N/A'}")
+    if not text or len(text) < 40:
+        logger.warning("⚠️ テキストが短すぎます")
+        return fields
 
-    def best_entity(types):
-        for t in types:
-            for e in entities:
-                if t in (e.type_ or "").lower():
-                    return e
-        return None
+    try:
+        # === Gemini初期化 ===
+        vertexai.init(project=project_id, location="us-central1")
+        model = GenerativeModel("gemini-2.0-flash")
 
-    def entity_text(e):
-        if not e:
-            return None
-        if e.mention_text:
-            return e.mention_text.strip()
-        if e.text_anchor and doc.text:
-            start = e.text_anchor.text_segments[0].start_index or 0
-            end = e.text_anchor.text_segments[0].end_index or 0
-            return doc.text[start:end].strip()
-        return None
+        # === プロンプト ===
+        prompt = f"""
+以下は請求書のテキストです。
+次の4項目を正確に抽出して、必ずJSONのみで出力してください。
 
-    # --- 社名
-    e_company = best_entity(["supplier_name", "vendor_name", "seller_name"])
-    fields["vendor"] = entity_text(e_company)
+抽出ルール:
+- vendor: 「株式会社」「有限会社」で始まる発行会社名
+- subtotal: 「小計」「税抜」「外税対象金額」のいずれかに対応する金額（数字のみ、カンマ除去）
+- total: 「合計」「ご請求金額」「総額」「税込」に対応する最大の金額（数字のみ、カンマ除去）
+- due_date: 「支払期限」「お支払期日」「入金期日」に該当する日付（YYYY-MM-DD形式）
+- 「発行日」「請求日」「検針日」などは支払期限として扱わない
+- 金額は日本円表記の最大値を採用
+- JSON以外の説明文は出力禁止
 
-    # --- 金額
-    e_subtotal = best_entity(["subtotal", "net_amount"])
-    e_total = best_entity(["total", "grand_total"])
-    subtotal = _to_decimal(entity_text(e_subtotal))
-    total = _to_decimal(entity_text(e_total))
-    fields["subtotal"] = float(subtotal) if subtotal else None
-    fields["total"] = float(total) if total else None
+テキスト:
+{text[:2000]}
 
-    # --- 入金期日
-    e_due = best_entity(["due_date", "payment_due_date"])
-    due_raw = entity_text(e_due)
-    if due_raw:
-        m = re.search(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", due_raw)
-        if m:
-            y, mo, d = map(int, m.groups())
-            fields["due_date"] = datetime(y, mo, d).date().isoformat()
+出力フォーマット:
+{{
+  "vendor": "...",
+  "subtotal": 数字のみ,
+  "total": 数字のみ,
+  "due_date": "YYYY-MM-DD"
+}}
+"""
+        response = model.generate_content(prompt)
+        raw = (response.text or "").strip()
+        logger.info(f"🤖 Gemini raw output: {raw[:300]}")
 
-    print(f"🔍 抽出結果: {fields}")
+        ai_fields = {}
+        if raw:
+            # JSON部分のみ抽出
+            m = re.search(r"\{.*\}", raw, re.S)
+            if m:
+                try:
+                    ai_fields = json.loads(m.group(0))
+                    logger.info(f"✅ Gemini parsed: {ai_fields}")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"⚠️ JSON parse failed: {e}")
+                    ai_fields = {}
+
+        # === フォールバック（Geminiが失敗した場合） ===
+        if not ai_fields or not any(ai_fields.values()):
+            logger.warning("⚠️ Gemini extraction failed, using regex fallback")
+            
+            company = re.search(r'(?:株式|有限)会社[^\s　\n]+', text)
+            amount_total = re.search(r"(?:合計|ご請求金額|総額)[^\d¥￥]*[¥￥]?\s*([\d,]+)", text)
+            amount_subtotal = re.search(r"(?:小計|税抜金額)[^\d¥￥]*[¥￥]?\s*([\d,]+)", text)
+            due = re.search(r"(?:支払期限|お支払期日|入金期日)[^\d]*(\d{4})[年/.\-](\d{1,2})[月/.\-](\d{1,2})", text)
+
+            if company:
+                ai_fields["vendor"] = company.group(0)
+            if amount_subtotal:
+                val = _to_decimal(amount_subtotal.group(1))
+                ai_fields["subtotal"] = float(val) if val else None
+            if amount_total:
+                val = _to_decimal(amount_total.group(1))
+                ai_fields["total"] = float(val) if val else None
+            if due:
+                y, mo, d = map(int, due.groups())
+                ai_fields["due_date"] = datetime(y, mo, d).date().isoformat()
+
+        # === 結果統合 ===
+        fields.update({
+            "vendor": ai_fields.get("vendor"),
+            "subtotal": float(ai_fields.get("subtotal")) if ai_fields.get("subtotal") else None,
+            "total": float(ai_fields.get("total")) if ai_fields.get("total") else None,
+            "due_date": ai_fields.get("due_date")
+        })
+
+        logger.info(f"🔍 Final extracted fields: {fields}")
+
+    except Exception as e:
+        logger.error(f"❌ Gemini extraction error: {e}", exc_info=True)
+
     return fields
 
 
 # ==== PDFをDocument AIで解析 ====
 def process_pdf(bucket_name: str, blob_name: str) -> dict:
-    """GCSからPDFを取得してDocument AIに送信、抽出結果を返す"""
-    print(f"Processing PDF: gs://{bucket_name}/{blob_name}")
+    """GCSからPDFを取得してDocument AIに送信、Geminiで抽出"""
+    logger.info(f"Processing PDF: gs://{bucket_name}/{blob_name}")
 
-    # クライアント初期化
-    storage_client = storage.Client()
-    docai_client = documentai.DocumentProcessorServiceClient(
-        client_options=ClientOptions(api_endpoint=f"{os.environ.get('LOCATION', 'us')}-documentai.googleapis.com")
-    )
+    try:
+        # クライアント初期化
+        storage_client = storage.Client()
+        project_id = os.environ["GCP_PROJECT_ID"]
+        location = os.environ.get("DOCAI_LOCATION", "us")
+        processor_id = os.environ["DOCAI_PROCESSOR_ID"]
+        
+        docai_client = documentai.DocumentProcessorServiceClient(
+            client_options=ClientOptions(api_endpoint=f"{location}-documentai.googleapis.com")
+        )
 
-    # GCSからPDFダウンロード
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        blob.download_to_filename(tmp.name)
-        pdf_path = tmp.name
+        # GCSからPDFダウンロード
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            blob.download_to_filename(tmp.name)
+            pdf_path = tmp.name
 
-    # Document AI呼び出し
-    processor_name = docai_client.processor_path(
-        os.environ["GCP_PROJECT_ID"], os.environ["DOCAI_LOCATION"], os.environ["DOCAI_PROCESSOR_ID"]
-    )
-    with open(pdf_path, "rb") as f:
-        raw_document = documentai.RawDocument(content=f.read(), mime_type="application/pdf")
-    result = docai_client.process_document(request={"name": processor_name, "raw_document": raw_document})
-    doc = result.document
+        # Document AI呼び出し（OCRのみ）
+        processor_name = docai_client.processor_path(project_id, location, processor_id)
+        logger.info(f"🔧 Using processor: {processor_name}")
+        
+        with open(pdf_path, "rb") as f:
+            raw_document = documentai.RawDocument(content=f.read(), mime_type="application/pdf")
+        
+        result = docai_client.process_document(request={"name": processor_name, "raw_document": raw_document})
+        doc = result.document
 
-    fields = extract_fields(doc)
-    fields["_source"] = {"bucket": bucket_name, "name": blob_name}
-    print(f"✅ Extracted fields: {fields}")
-    return fields
+        # OCRテキスト取得
+        ocr_text = doc.text or ""
+        logger.info(f"📄 OCR text length: {len(ocr_text)}")
+        logger.info(f"📝 OCR preview: {ocr_text[:500]}")
+
+        # Geminiで抽出
+        fields = extract_with_gemini(ocr_text, project_id)
+        fields["_source"] = {
+            "bucket": bucket_name,
+            "name": blob_name,
+            "processor_id": processor_id,
+            "location": location,
+            "status": "success"
+        }
+        
+        logger.info(f"✅ Extracted fields: {fields}")
+        return fields
+
+    except Exception as e:
+        logger.error(f"❌ PDF processing error: {e}", exc_info=True)
+        return {
+            "vendor": None,
+            "subtotal": None,
+            "total": None,
+            "due_date": None,
+            "_source": {
+                "bucket": bucket_name,
+                "name": blob_name,
+                "status": "error",
+                "error_message": str(e)
+            }
+        }
+
