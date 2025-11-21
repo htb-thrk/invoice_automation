@@ -49,6 +49,7 @@ def on_file_finalized(cloud_event):
         # 1. Document AI で処理
         extracted_data = process_pdf(bucket_name, file_name)
         logger.info(f"✅ [PDF Processor] Extracted: {extracted_data}")
+        logger.info(f"🔍 [DEBUG] Extracted data keys: {list(extracted_data.keys())}")
 
         # 2. OUTPUT_BUCKET に JSON 保存
         output_bucket_name = os.environ.get("OUTPUT_BUCKET")
@@ -75,7 +76,9 @@ def on_file_finalized(cloud_event):
             json.dumps(result, ensure_ascii=False, indent=2),
             content_type="application/json",
         )
-
+        
+        logger.info(f"🔍 [DEBUG] Saved JSON keys: {list(result.keys())}")
+        logger.info(f"🔍 [DEBUG] Saved JSON content: {json.dumps(result, ensure_ascii=False, indent=2)[:500]}")
         logger.info(f"✅ [PDF Processor] Saved JSON: gs://{output_bucket_name}/{json_file_name}")
         logger.info(f"🎉 [PDF Processor] Successfully processed: {file_name}")
 
