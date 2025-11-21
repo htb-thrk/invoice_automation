@@ -25,6 +25,11 @@ def extract_fields(doc):
     }
 
     entities = list(doc.entities) if getattr(doc, "entities", None) else []
+    
+    # デバッグ: 抽出されたエンティティを表示
+    print(f"📊 Document AI が抽出したエンティティ数: {len(entities)}")
+    for e in entities[:10]:  # 最初の10個を表示
+        print(f"  - type: {e.type_}, text: {e.mention_text or 'N/A'}")
 
     def best_entity(types):
         for t in types:
@@ -65,6 +70,7 @@ def extract_fields(doc):
             y, mo, d = map(int, m.groups())
             fields["due_date"] = datetime(y, mo, d).date().isoformat()
 
+    print(f"🔍 抽出結果: {fields}")
     return fields
 
 
