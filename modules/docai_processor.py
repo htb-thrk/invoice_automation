@@ -88,7 +88,7 @@ def process_pdf(bucket_name: str, blob_name: str) -> dict:
 
     # Document AI呼び出し
     processor_name = docai_client.processor_path(
-        os.environ["PROJECT_ID"], os.environ["LOCATION"], os.environ["PROCESSOR_ID"]
+        os.environ["GCP_PROJECT_ID"], os.environ["DOCAI_LOCATION"], os.environ["DOCAI_PROCESSOR_ID"]
     )
     with open(pdf_path, "rb") as f:
         raw_document = documentai.RawDocument(content=f.read(), mime_type="application/pdf")
