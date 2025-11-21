@@ -19,17 +19,14 @@ def extract_fields(doc):
     """Document AIのDocumentオブジェクトから請求書情報を抽出"""
     fields = {
         "vendor": None,
-        "subtotal": None,
-        "total": None,
+        "tool": None,
+        "amount_excl_tax": None,
+        "amount_incl_tax": None,
         "due_date": None,
+        "invoice_date": None,
     }
 
     entities = list(doc.entities) if getattr(doc, "entities", None) else []
-    
-    # デバッグ: 抽出されたエンティティを表示
-    print(f"📊 Document AI が抽出したエンティティ数: {len(entities)}")
-    for e in entities[:10]:  # 最初の10個を表示
-        print(f"  - type: {e.type_}, text: {e.mention_text or 'N/A'}")
 
     def best_entity(types):
         for t in types:
@@ -58,8 +55,8 @@ def extract_fields(doc):
     e_total = best_entity(["total", "grand_total"])
     subtotal = _to_decimal(entity_text(e_subtotal))
     total = _to_decimal(entity_text(e_total))
-    fields["subtotal"] = float(subtotal) if subtotal else None
-    fields["total"] = float(total) if total else None
+    fields["amount_excl_tax"] = float(subtotal) if subtotal else None
+    fields["amount_incl_tax"] = float(total) if total else None
 
     # --- 入金期日
     e_due = best_entity(["due_date", "payment_due_date"])
@@ -70,7 +67,6 @@ def extract_fields(doc):
             y, mo, d = map(int, m.groups())
             fields["due_date"] = datetime(y, mo, d).date().isoformat()
 
-    print(f"🔍 抽出結果: {fields}")
     return fields
 
 
@@ -94,7 +90,7 @@ def process_pdf(bucket_name: str, blob_name: str) -> dict:
 
     # Document AI呼び出し
     processor_name = docai_client.processor_path(
-        os.environ["GCP_PROJECT_ID"], os.environ["DOCAI_LOCATION"], os.environ["DOCAI_PROCESSOR_ID"]
+        os.environ["PROJECT_ID"], os.environ["LOCATION"], os.environ["PROCESSOR_ID"]
     )
     with open(pdf_path, "rb") as f:
         raw_document = documentai.RawDocument(content=f.read(), mime_type="application/pdf")
