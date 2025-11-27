@@ -173,7 +173,9 @@ jobs:
             --min-instances=0 \
             --max-instances=10 \
             --cpu=1 \
-            --port=8080
+            --port=8080 \
+            --vpc-egress=all-traffic \
+            --network=default
 
       - name: Set up Eventarc trigger for Cloud Storage
         run: |
