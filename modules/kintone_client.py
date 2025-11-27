@@ -44,13 +44,25 @@ class KintoneAPIError(Exception):
 
 def normalize_vendor(name: str) -> str:
     """
-    ベンダー名を正規化（株式会社の有無を無視、空白除去）
+    ベンダー名を正規化
+    - 株式会社などの法人格を除去
+    - 印影の誤認識を修正（例: 「リンクク」→「リンク」）
+    - 全角・半角スペースを除去
     """
     if not name:
         raise ValueError("ベンダー名が空です")
     
     # 株式会社、（株）、㈱を除去
     normalized = re.sub(r"株式会社|（株）|㈱|\(株\)", "", name)
+    
+    # 印影の誤認識パターンを修正
+    ocr_corrections = {
+        # 印影による重複文字の誤認識
+        r"リンクク": "リンク",
+    }
+    
+    for pattern, replacement in ocr_corrections.items():
+        normalized = re.sub(pattern, replacement, normalized)
     
     # 全角・半角スペースを除去
     normalized = re.sub(r"\s+", "", normalized)
