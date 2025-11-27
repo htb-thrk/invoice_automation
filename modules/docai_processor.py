@@ -30,7 +30,7 @@ def normalize_vendor_name(name: str) -> str:
     
     # OCR誤認識パターンを修正（印影による重複文字）
     ocr_corrections = {
-        r"リンクク": "リンク",
+        r"リンク.*$": "リンク",
     }
     
     for pattern, replacement in ocr_corrections.items():
