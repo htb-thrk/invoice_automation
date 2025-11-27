@@ -14,6 +14,34 @@ import vertexai
 # ロガー設定
 logger = logging.getLogger(__name__)
 
+# ==== ベンダー名正規化 ====
+def normalize_vendor_name(name: str) -> str:
+    """
+    ベンダー名を正規化
+    - 株式会社などの法人格を除去
+    - OCR誤認識（印影）を修正（例: 「リンクク」→「リンク」）
+    - 全角・半角スペースを除去
+    """
+    if not name:
+        return name
+    
+    # 株式会社、（株）、㈱を除去
+    normalized = re.sub(r"株式会社|（株）|㈱|\(株\)|有限会社", "", name)
+    
+    # OCR誤認識パターンを修正（印影による重複文字）
+    ocr_corrections = {
+        r"リンクク": "リンク",
+    }
+    
+    for pattern, replacement in ocr_corrections.items():
+        normalized = re.sub(pattern, replacement, normalized)
+    
+    # 全角・半角スペースを除去
+    normalized = re.sub(r"\s+", "", normalized)
+    
+    logger.debug(f"ベンダー名正規化: '{name}' → '{normalized}'")
+    return normalized.strip() if normalized else name
+
 # ==== 共通：数値変換 ====
 def _to_decimal(x):
     """数値文字列をDecimalに安全変換"""
@@ -113,9 +141,10 @@ def extract_with_gemini(text: str, project_id: str) -> dict:
                 y, mo, d = map(int, due.groups())
                 ai_fields["due_date"] = datetime(y, mo, d).date().isoformat()
 
-        # === 結果統合 ===
+        # === 結果統合 & 正規化 ===
+        vendor_raw = ai_fields.get("vendor")
         fields.update({
-            "vendor": ai_fields.get("vendor"),
+            "vendor": normalize_vendor_name(vendor_raw) if vendor_raw else None,
             "subtotal": float(ai_fields.get("subtotal")) if ai_fields.get("subtotal") else None,
             "total": float(ai_fields.get("total")) if ai_fields.get("total") else None,
             "due_date": ai_fields.get("due_date")

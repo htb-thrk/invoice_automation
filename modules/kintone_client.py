@@ -7,6 +7,7 @@ Kintone API クライアント（完全版）
 """
 import os
 import re
+import json
 import requests
 import logging
 from typing import Dict, Any, Optional, List
@@ -40,27 +41,6 @@ class KintoneAPIError(Exception):
 # ============================================================
 # バリデーション関数
 # ============================================================
-
-def normalize_vendor(name: str) -> str:
-    """
-    ベンダー名を正規化（株式会社の有無を無視、空白除去）
-    """
-    if not name:
-        raise ValueError("ベンダー名が空です")
-    
-    # 株式会社、（株）、㈱を除去
-    normalized = re.sub(r"株式会社|（株）|㈱|\(株\)", "", name)
-    
-    # 全角・半角スペースを除去
-    normalized = re.sub(r"\s+", "", normalized)
-    
-    # 正規化後も空になった場合
-    if not normalized:
-        raise ValueError(f"ベンダー名が正規化後に空になりました（元の値: '{name}'）")
-    
-    logger.debug(f"ベンダー名正規化: '{name}' → '{normalized}'")
-    return normalized
-
 
 def validate_amount(value: Any, field_name: str = "金額") -> Optional[float]:
     """
@@ -154,9 +134,18 @@ class KintoneClient:
         self.app_id = app_id or os.environ.get("KINTONE_APP_ID")
         self.api_token = api_token or os.environ.get("KINTONE_API_TOKEN")
         
+        # デバッグ: 環境変数の読み込み状況を確認
+        logger.debug(f"環境変数読み込み: KINTONE_DOMAIN={self.domain}")
+        logger.debug(f"環境変数読み込み: KINTONE_APP_ID={self.app_id}")
+        logger.debug(f"環境変数読み込み: KINTONE_API_TOKEN={'*' * (len(self.api_token) if self.api_token else 0)}文字")
+        
         if not all([self.domain, self.app_id, self.api_token]):
+            missing = []
+            if not self.domain: missing.append("KINTONE_DOMAIN")
+            if not self.app_id: missing.append("KINTONE_APP_ID")
+            if not self.api_token: missing.append("KINTONE_API_TOKEN")
             raise ValueError(
-                "domain, app_id, api_token はすべて必須です（引数または環境変数で指定）"
+                f"以下の環境変数が設定されていません: {', '.join(missing)}"
             )
         
         self.headers = {
@@ -165,7 +154,7 @@ class KintoneClient:
         }
         
         logger.info(
-            f"KintoneClient初期化: domain={self.domain}, app_id={self.app_id}"
+            f"KintoneClient初期化: domain={self.domain}, app_id={self.app_id}, token_length={len(self.api_token)}"
         )
     
     def validate_record_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -185,15 +174,12 @@ class KintoneClient:
         validated = {}
         
         try:
-            # ベンダー名の検証（必須）
+            # ベンダー名の検証（必須、正規化はPDF processor側で完了済み）
             vendor = data.get("vendor")
             if not vendor:
                 errors.append("ベンダー名が指定されていません")
             else:
-                try:
-                    validated["vendor"] = normalize_vendor(vendor)
-                except ValueError as e:
-                    errors.append(f"ベンダー名エラー: {str(e)}")
+                validated["vendor"] = vendor
             
             # 小計の検証（任意）
             try:
@@ -258,18 +244,30 @@ class KintoneClient:
         
         # 2. Kintone API用のペイロード作成
         url = f"{self.domain}/k/v1/record.json"
-        payload = {
-            "app": self.app_id,
-            "record": {
-                "vendor": {"value": validated_data.get("vendor", "")},
-                "subtotal": {"value": str(validated_data.get("subtotal") or "")},
-                "total": {"value": str(validated_data.get("total") or "")},
-                "due_date": {"value": validated_data.get("due_date", "")}
-            }
+        
+        # レコード構築（Noneの場合はフィールドを含めない）
+        record = {
+            "vendor": {"value": validated_data.get("vendor", "")}
         }
         
-        logger.debug(f"Kintone API呼び出し: POST {url}")
-        logger.debug(f"ペイロード: {payload}")
+        # 数値フィールドはNoneの場合は含めない（空文字列を送るとエラーになる）
+        if validated_data.get("subtotal") is not None:
+            record["subtotal"] = {"value": str(validated_data["subtotal"])}
+        
+        if validated_data.get("total") is not None:
+            record["total"] = {"value": str(validated_data["total"])}
+        
+        # 日付フィールド
+        if validated_data.get("due_date"):
+            record["due_date"] = {"value": validated_data["due_date"]}
+        
+        payload = {
+            "app": self.app_id,
+            "record": record
+        }
+        
+        logger.info(f"📤 Kintone API呼び出し: POST {url}")
+        logger.info(f"📦 送信ペイロード: {json.dumps(payload, ensure_ascii=False, indent=2)}")
         
         # 3. API呼び出し
         try:
@@ -380,15 +378,25 @@ class KintoneClient:
         validated_data = self.validate_record_data(data)
         
         url = f"{self.domain}/k/v1/record.json"
+        
+        # レコード構築（Noneの場合はフィールドを含めない）
+        record = {
+            "vendor": {"value": validated_data.get("vendor", "")}
+        }
+        
+        if validated_data.get("subtotal") is not None:
+            record["subtotal"] = {"value": str(validated_data["subtotal"])}
+        
+        if validated_data.get("total") is not None:
+            record["total"] = {"value": str(validated_data["total"])}
+        
+        if validated_data.get("due_date"):
+            record["due_date"] = {"value": validated_data["due_date"]}
+        
         payload = {
             "app": self.app_id,
             "id": record_id,
-            "record": {
-                "vendor": {"value": validated_data.get("vendor", "")},
-                "subtotal": {"value": str(validated_data.get("subtotal") or "")},
-                "total": {"value": str(validated_data.get("total") or "")},
-                "due_date": {"value": validated_data.get("due_date", "")}
-            }
+            "record": record
         }
         
         logger.debug(f"レコード更新: ID={record_id}")
