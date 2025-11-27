@@ -154,9 +154,18 @@ class KintoneClient:
         self.app_id = app_id or os.environ.get("KINTONE_APP_ID")
         self.api_token = api_token or os.environ.get("KINTONE_API_TOKEN")
         
+        # デバッグ: 環境変数の読み込み状況を確認
+        logger.debug(f"環境変数読み込み: KINTONE_DOMAIN={self.domain}")
+        logger.debug(f"環境変数読み込み: KINTONE_APP_ID={self.app_id}")
+        logger.debug(f"環境変数読み込み: KINTONE_API_TOKEN={'*' * (len(self.api_token) if self.api_token else 0)}文字")
+        
         if not all([self.domain, self.app_id, self.api_token]):
+            missing = []
+            if not self.domain: missing.append("KINTONE_DOMAIN")
+            if not self.app_id: missing.append("KINTONE_APP_ID")
+            if not self.api_token: missing.append("KINTONE_API_TOKEN")
             raise ValueError(
-                "domain, app_id, api_token はすべて必須です（引数または環境変数で指定）"
+                f"以下の環境変数が設定されていません: {', '.join(missing)}"
             )
         
         self.headers = {
@@ -165,7 +174,7 @@ class KintoneClient:
         }
         
         logger.info(
-            f"KintoneClient初期化: domain={self.domain}, app_id={self.app_id}"
+            f"KintoneClient初期化: domain={self.domain}, app_id={self.app_id}, token_length={len(self.api_token)}"
         )
     
     def validate_record_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
