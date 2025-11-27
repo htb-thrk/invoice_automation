@@ -42,39 +42,6 @@ class KintoneAPIError(Exception):
 # バリデーション関数
 # ============================================================
 
-def normalize_vendor(name: str) -> str:
-    """
-    ベンダー名を正規化
-    - 株式会社などの法人格を除去
-    - 印影の誤認識を修正（例: 「リンクク」→「リンク」）
-    - 全角・半角スペースを除去
-    """
-    if not name:
-        raise ValueError("ベンダー名が空です")
-    
-    # 株式会社、（株）、㈱を除去
-    normalized = re.sub(r"株式会社|（株）|㈱|\(株\)", "", name)
-    
-    # 印影の誤認識パターンを修正
-    ocr_corrections = {
-        # 印影による重複文字の誤認識
-        r"リンクク": "リンク",
-    }
-    
-    for pattern, replacement in ocr_corrections.items():
-        normalized = re.sub(pattern, replacement, normalized)
-    
-    # 全角・半角スペースを除去
-    normalized = re.sub(r"\s+", "", normalized)
-    
-    # 正規化後も空になった場合
-    if not normalized:
-        raise ValueError(f"ベンダー名が正規化後に空になりました（元の値: '{name}'）")
-    
-    logger.debug(f"ベンダー名正規化: '{name}' → '{normalized}'")
-    return normalized
-
-
 def validate_amount(value: Any, field_name: str = "金額") -> Optional[float]:
     """
     金額を検証してfloatに変換
@@ -207,15 +174,12 @@ class KintoneClient:
         validated = {}
         
         try:
-            # ベンダー名の検証（必須）
+            # ベンダー名の検証（必須、正規化はPDF processor側で完了済み）
             vendor = data.get("vendor")
             if not vendor:
                 errors.append("ベンダー名が指定されていません")
             else:
-                try:
-                    validated["vendor"] = normalize_vendor(vendor)
-                except ValueError as e:
-                    errors.append(f"ベンダー名エラー: {str(e)}")
+                validated["vendor"] = vendor
             
             # 小計の検証（任意）
             try:
