@@ -48,9 +48,11 @@ def upload_files():
         
         for file in pdf_files:
             try:
-                # ファイル名を安全化
-                safe_filename = secure_filename(file.filename)
-                unique_filename = f"{uuid.uuid4().hex}_{safe_filename}"
+                # ファイル名を安全化（拡張子を保持）
+                original_name = file.filename
+                name_without_ext = os.path.splitext(original_name)[0]
+                safe_name = secure_filename(name_without_ext)
+                unique_filename = f"{uuid.uuid4().hex}_{safe_name}.pdf"
                 
                 # GCSにアップロード
                 blob = bucket.blob(unique_filename)
