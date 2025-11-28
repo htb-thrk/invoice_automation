@@ -21,18 +21,48 @@ function formatFileSize(bytes) {
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
+let resultTimeout = null;
+
 function showResult(message, type = 'info') {
   if (!result) return console.warn('result element not found');
+
+  // 既存のタイムアウトをクリア
+  if (resultTimeout) {
+    clearTimeout(resultTimeout);
+    resultTimeout = null;
+  }
+
   result.className = `result ${type}`;
-  result.textContent = message;
+  result.innerHTML = `
+    <span class="result-message">${message}</span>
+    <button type="button" class="result-close" aria-label="閉じる">
+      <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+        <path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/>
+      </svg>
+    </button>
+  `;
   result.style.display = 'block';
-  // hide after 4s
-  setTimeout(() => { result.style.display = 'none'; }, 4000);
+
+  // ×ボタンのクリックイベント
+  const closeBtn = result.querySelector('.result-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', clearResult);
+  }
+
+  // 20秒後に自動で非表示
+  resultTimeout = setTimeout(() => { result.style.display = 'none'; }, 20000);
 }
 
 function clearResult() {
   if (!result) return;
-  result.textContent = '';
+
+  // タイムアウトをクリア
+  if (resultTimeout) {
+    clearTimeout(resultTimeout);
+    resultTimeout = null;
+  }
+
+  result.innerHTML = '';
   result.className = 'result';
   result.style.display = 'none';
 }
