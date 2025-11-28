@@ -113,7 +113,7 @@ def upload_files():
             # 全て成功
             return jsonify({
                 'success': True,
-                'message': f'✅ {len(uploaded_files)}個のファイルをアップロードしました\nKintoneに反映されるまで1分程お待ちください。',
+                'message': f'✅ {len(uploaded_files)}個のファイルをアップロードしました',
                 'uploaded': uploaded_files
             }), 200
         elif len(uploaded_files) == 0 and len(duplicate_files) == 0:
@@ -129,7 +129,7 @@ def upload_files():
             if len(uploaded_files) > 0:
                 message_parts.append(f'{len(uploaded_files)}個成功')
             if len(duplicate_files) > 0:
-                message_parts.append(f'{len(duplicate_files)}個が既にアップロード済みのファイルです')
+                message_parts.append(f'{len(duplicate_files)}個重複')
             if len(failed_files) > 0:
                 message_parts.append(f'{len(failed_files)}個失敗')
             
